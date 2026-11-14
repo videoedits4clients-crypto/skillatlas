@@ -80,7 +80,7 @@ export const CATEGORIES = [
   },
 ];
 
-function compile(keyword) {
+export function compile(keyword) {
   const prefix = keyword.endsWith('*');
   const kw = (prefix ? keyword.slice(0, -1) : keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[\s-]+/g, '[\\s_-]+');
   return new RegExp(`(?:^|[^a-z0-9])${kw}${prefix ? '' : '(?![a-z0-9])'}`, 'i');

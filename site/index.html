@@ -24,7 +24,7 @@
       <a class="brand" href="./" data-nav="browse"><span class="brand-mark">🧭</span><span>Skill<b>Atlas</b></span></a>
       <nav class="nav" aria-label="Main">
         <a href="./" data-nav="browse">Browse</a>
-        <a href="?view=collections" data-nav="collections">Collections</a>
+        <a href="?view=collections" data-nav="collections">Packs</a>
         <a href="?view=guide" data-nav="guide">Guide</a>
         <a href="?view=saved" data-nav="saved">Saved <span class="pill" id="savedCount">0</span></a>
       </nav>
@@ -60,6 +60,15 @@
           <div class="cat-grid" id="catGrid"></div>
         </section>
 
+        <section class="block" id="nicheBlock">
+          <div class="block-head">
+            <h2>Or pick your niche</h2>
+            <p class="muted">Specific jobs people come here for. One click shows the skills and ready-made packs for it.</p>
+          </div>
+          <div class="niche-grid" id="nicheGrid"></div>
+          <button class="link" id="nicheMore" hidden>Show all niches ↓</button>
+        </section>
+
         <section class="block" id="trendBlock" hidden>
           <div class="block-head row">
             <div><h2 id="trendTitle">🔥 Trending this week</h2><p class="muted" id="trendSub"></p></div>
@@ -74,6 +83,14 @@
             <button class="link" data-see="new">See all →</button>
           </div>
           <div class="rail" id="newRail"></div>
+        </section>
+
+        <section class="block" id="packBlock" hidden>
+          <div class="block-head row">
+            <div><h2>🎁 Popular packs that need no API keys</h2><p class="muted">Ready-made sets of skills from one author. Install the whole pack and every skill in it works without extra accounts.</p></div>
+            <button class="link" data-nav="collections">See all packs →</button>
+          </div>
+          <div class="rail" id="packRail"></div>
         </section>
 
         <section class="block" id="startBlock">
@@ -110,6 +127,8 @@
             </div>
           </div>
           <div class="active-filters" id="activeFilters"></div>
+          <div id="packHeader" hidden></div>
+          <div id="nichePacks" hidden></div>
           <div class="layout">
             <aside class="sidebar" aria-label="Categories">
               <div class="side-title">Categories</div>
@@ -133,11 +152,22 @@
     <!-- COLLECTIONS -->
     <section id="view-collections" class="view" hidden>
       <div class="wrap page">
-        <h1 class="page-title">Collections</h1>
-        <p class="lede">Skills live inside GitHub repositories. Here's every repo we track, most-starred first. Pick one to see just its skills.</p>
-        <div class="search small">
-          <input id="repoQ" type="search" placeholder="Filter collections…" aria-label="Filter collections">
+        <h1 class="page-title">Skill packs</h1>
+        <p class="lede">A pack is a set of skills published together by one author, like a marketing kit or a research toolkit. Pick one to see its skills or download the whole thing.</p>
+        <div class="pack-filters">
+          <div class="search small">
+            <input id="repoQ" type="search" placeholder="Search packs…" aria-label="Search packs">
+          </div>
+          <label class="select"><span class="sr">Theme</span><select id="packTheme"><option value="">All themes</option></select></label>
+          <label class="select"><span class="sr">Niche</span><select id="packNiche"><option value="">All niches</option></select></label>
+          <button class="toggle" id="packNoKey" aria-pressed="false">🔓 No API keys needed</button>
+          <label class="select"><span class="sr">Sort</span><select id="packSort">
+            <option value="stars">Most popular</option>
+            <option value="trending">Trending</option>
+            <option value="size">Most skills</option>
+          </select></label>
         </div>
+        <p class="muted" id="packCount"></p>
         <div class="repo-list" id="repoList"></div>
       </div>
     </section>
@@ -200,6 +230,7 @@
         <details class="faq"><summary>How often is this updated?</summary><p>Twice a day. A scheduled job scans GitHub for repositories that contain <code>SKILL.md</code> files, reads each skill's name and description, sorts it into a category, and republishes the site.</p></details>
         <details class="faq"><summary>Do skills cost money? What does “Needs key” mean?</summary><p>Skills themselves are free to download. Most only need your AI assistant (Claude or another agent). Some connect to an outside service such as OpenAI, ElevenLabs or Composio, and you'd need your own account or API key there. Those services may charge. Skills like this show a 🔑 <b>Needs key</b> badge naming the service, and <b>Optional key</b> means it works without one. Turn on <b>🔓 No API key needed</b> above the results to hide them. This is detected automatically from each skill's instructions, so treat it as a strong hint, not a guarantee.</p></details>
         <details class="faq"><summary>What does the <span class="trend-ic" style="animation:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg></span> icon next to a name mean?</summary><p>It means the skill is <b>trending</b>: its collection is one of the fastest-growing on GitHub this week, counting both new stars and how fast it's growing for its size. Hover over the icon to see how many stars it gained. The list is recalculated with every update.</p></details>
+        <details class="faq"><summary>What is a skill pack? What is a niche?</summary><p>A <b>pack</b> is a set of skills one author publishes together in a single GitHub repository, for example a marketing kit or a set of research tools. You can install one skill from it or download the whole pack. A pack marked <b>🔓 No API keys</b> has no skills that need an outside account. A <b>niche</b> is a specific job, like video editing, SEO or resume writing. Niches are narrower than categories, and one skill can appear in several. Both are assigned automatically from each skill's name and description.</p></details>
         <details class="faq"><summary>Where do the skills come from?</summary><p>Anthropic's official repositories, well-known curated “awesome” lists, and public GitHub repositories tagged with topics like <code>claude-skills</code> or <code>agent-skills</code>. Repos need a minimum number of stars to be listed, which filters out most spam and experiments.</p></details>
         <details class="faq"><summary>Why do I see the same skill name twice?</summary><p>Different authors sometimes publish skills with the same name. Exact copies are merged into the most-starred source; genuinely different versions are kept so you can compare.</p></details>
         <details class="faq"><summary>A category looks wrong.</summary><p>Categories are assigned automatically from each skill's name and description, so a few will be off. The search box looks at everything, so searching is the fastest way to find something specific.</p></details>

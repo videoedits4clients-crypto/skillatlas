@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, classify } from './categories.mjs';
 import { detectRequirements, needsFor } from './requirements.mjs';
+import { NICHES, classifyNiches } from './niches.mjs';
 
 // Bump when the per-file data extracted from SKILL.md changes, so cached entries are re-read.
 const CACHE_VERSION = 3;
@@ -414,6 +415,7 @@ async function main() {
   // File lists go to a separate file the site loads only when a skill is opened.
   const files = {};
   // Slim the list payload: id / title / standard file path are derived in the browser.
+  const nicheCounts = {};
   const slim = skills.map(s => {
     files[s.id] = s.files;
     const o = { name: s.name, description: truncate(s.description, L.maxDescriptionChars), repo: s.repo, path: s.path, category: s.category };
@@ -424,6 +426,9 @@ async function main() {
     o.firstSeen = s.firstSeen.slice(0, 10);
     if (s.copies) o.copies = s.copies;
     if (s.needs?.length) o.needs = s.needs;
+    // Niches come from the name + description, so rule changes apply on the very next run.
+    const niches = classifyNiches({ name: s.name, description: s.description, path: s.path });
+    if (niches.length) { o.niches = niches; niches.forEach(n => (nicheCounts[n] = (nicheCounts[n] || 0) + 1)); }
     if (s.needsOptional) o.needsOptional = true;
     return o;
   });
@@ -438,6 +443,7 @@ async function main() {
     generatedAt: now,
     stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, trendDays: maxTrendDays, trackingSince: state.since, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
     categories: CATEGORIES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: counts[id] || 0 })),
+    niches: NICHES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: nicheCounts[id] || 0 })),
     repos: finalRepos,
     skills: slim,
   };

@@ -46,6 +46,9 @@ config/sources.json
 ### What visitors get
 - Search in plain words: "make slides" also finds `pptx` skills.
 - 15 categories, an official-or-community filter, and sorting by recommended, stars, newest, trending, or A–Z.
+- **34 niches** (video editing, SEO, Instagram, resume, trading…), each with its own shareable page. A skill can sit in several niches. Rules are in `scripts/niches.mjs`.
+- **Skill packs**: every collection shown as a pack with its theme, size, a "No API keys" badge when none of its skills need one, filters by theme and niche, and a whole-pack download.
+- Trending and "Just added" rows, plus a trending icon next to skill names.
 - A "start here" row of official and top community skills for newcomers.
 - **🔑 Needs key / Optional key badges** naming the outside service a skill needs (OpenAI, Composio, ElevenLabs…), plus a **"No API key needed"** filter. This is a best guess from each SKILL.md's text (`scripts/requirements.mjs`), labelled on the site as automatic.
 - A detail panel for each skill with a rendered `SKILL.md` preview, its file list, similar skills, and more skills from the same repo.
@@ -64,6 +67,8 @@ config/sources.json
 | Hide a repo | add `"owner/repo"` to `blockedRepos` |
 | Mark another org as "Official" | `officialOwners` |
 | Change categories or keywords | `scripts/categories.mjs` |
+| Add or change a niche | `scripts/niches.mjs` |
+| Change API-key detection | `scripts/requirements.mjs` |
 | Change update times | `cron` in `.github/workflows/update.yml` |
 | Change look & text | `site/index.html`, `site/assets/styles.css` |
 
