@@ -1,0 +1,11 @@
+{
+  "name": "skillatlas",
+  "private": true,
+  "description": "A self-updating directory of Claude & AI-agent skills.",
+  "type": "module",
+  "scripts": {
+    "collect": "node scripts/collect.mjs",
+    "dev": "node scripts/serve.mjs 4173"
+  },
+  "engines": { "node": ">=20" }
+}

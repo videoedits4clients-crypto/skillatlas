@@ -1,0 +1,96 @@
+name: Update skills & deploy
+
+# Runs twice a day, on every code push to main, and on demand (Actions tab → Run workflow).
+#
+# Long-term design:
+# - Generated data is NOT committed to main. It lives on a separate "data" branch that is
+#   overwritten with a single commit each run, so the repo never grows over time.
+# - If collecting fails (GitHub outage, rate limit, sanity check), the job stops before
+#   deploying. The live site keeps showing the last good data and the next run retries.
+# - Each run re-enables this workflow via the API, so GitHub's "disable scheduled workflows
+#   after 60 days of inactivity" rule never kicks in.
+
+on:
+  schedule:
+    - cron: '17 2,14 * * *'   # 02:17 and 14:17 UTC
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the "data" branch
+  pages: write      # deploy GitHub Pages
+  id-token: write   # required by deploy-pages
+  actions: write    # keep-alive (re-enable this workflow)
+
+concurrency:
+  group: skills-pipeline
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Restore previous data (from the "data" branch)
+        run: |
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            git checkout FETCH_HEAD -- site/data cache
+            echo "Restored previous data and cache."
+          else
+            echo "No data branch yet — first run will do a full scan."
+          fi
+
+      - name: Collect skills from GitHub
+        env:
+          # Optional: save a personal access token as the SKILLS_GH_TOKEN secret for a higher API limit.
+          GITHUB_TOKEN: ${{ secrets.SKILLS_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: node scripts/collect.mjs
+
+      - name: Save data to the "data" branch (single commit, no history growth)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/site/data" "$tmp/cache"
+          cp site/data/*.json "$tmp/site/data/"
+          cp cache/state.json "$tmp/cache/"
+          printf '# Generated data\n\nWritten automatically by the "Update skills & deploy" workflow. Do not edit by hand.\n' > "$tmp/README.md"
+          cd "$tmp"
+          git init -q -b data
+          git config user.name "skillatlas-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "data: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+
+      - name: Keep the schedule alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/update.yml/enable"
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

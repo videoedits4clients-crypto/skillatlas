@@ -1,0 +1,49 @@
+{
+  "$comment": "Where the collector looks for skills. Edit freely — the next scheduled run picks up changes.",
+
+  "officialOwners": ["anthropics"],
+
+  "seedRepos": [
+    "anthropics/skills",
+    "anthropics/claude-cookbooks",
+    "anthropics/claude-plugins-official",
+    "anthropics/claude-code",
+    "anthropics/knowledge-work-plugins",
+    "obra/superpowers",
+    "ComposioHQ/awesome-claude-skills",
+    "VoltAgent/awesome-agent-skills",
+    "huggingface/skills",
+    "vercel-labs/agent-skills",
+    "openai/skills"
+  ],
+
+  "awesomeLists": [
+    "travisvn/awesome-claude-skills",
+    "ComposioHQ/awesome-claude-skills",
+    "VoltAgent/awesome-agent-skills",
+    "hesreallyhim/awesome-claude-code",
+    "BehiSecc/awesome-claude-skills",
+    "karanb192/awesome-claude-skills"
+  ],
+
+  "searchQueries": [
+    { "q": "topic:claude-skills", "pages": 3 },
+    { "q": "topic:agent-skills", "pages": 3 },
+    { "q": "topic:claude-code-skills", "pages": 2 },
+    { "q": "topic:anthropic-skills", "pages": 1 },
+    { "q": "topic:claude-skill", "pages": 1 },
+    { "q": "topic:claude-code-plugin", "pages": 1 },
+    { "q": "topic:claude-code-plugins", "pages": 1 },
+    { "q": "\"SKILL.md\" in:readme claude", "pages": 2 }
+  ],
+
+  "blockedRepos": [],
+
+  "limits": {
+    "minStars": 15,
+    "maxRepos": 450,
+    "maxSkillsPerRepo": 250,
+    "maxFilesPerSkill": 80,
+    "maxDescriptionChars": 420
+  }
+}

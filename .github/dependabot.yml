@@ -1,0 +1,11 @@
+# Opens at most one small PR a month when the GitHub Actions used by the workflow
+# get a new version, so the pipeline never runs on deprecated tooling.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
