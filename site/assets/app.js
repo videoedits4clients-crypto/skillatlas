@@ -91,6 +91,13 @@
         r.heat = Date.parse(r.pushedAt) > weekAgo ? Math.log10(r.stars + 1) * 10 : 0;
       }
     });
+    // The ↗ icon: only with real star-trend data, and only for the top ~4% of collections (max 15)
+    // by heat that gained at least 10 stars, so it stays meaningful.
+    if (state.trendReady) {
+      const hot = d.repos.filter(r => r.trend >= 10).sort((a, b) => b.heat - a.heat);
+      const n = Math.min(15, Math.max(5, Math.round(d.repos.length * 0.04)));
+      hot.slice(0, n).forEach(r => (r.isTrending = true));
+    }
     const humanize = n => n.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     state.skills = d.skills.map(s => {
       const r = state.repoMap.get(s.repo) || {};
@@ -182,7 +189,7 @@
       <button class="save ${state.saved.has(s.id) ? 'on' : ''}" data-save="${esc(s.id)}" aria-label="Save ${esc(s.title)}">${state.saved.has(s.id) ? '♥' : '♡'}</button>
       <div class="card-top">
         <div class="cat-icon" aria-hidden="true">${catIcon(s.category)}</div>
-        <div><h3>${esc(s.title)}</h3><div class="cat-name">${esc(catName(s.category))}</div></div>
+        <div><h3>${esc(s.title)}${trendIcon(s)}</h3><div class="cat-name">${esc(catName(s.category))}</div></div>
       </div>
       <p>${esc(s.description)}</p>
       ${badges(s, extra)}
@@ -192,6 +199,12 @@
         <span class="stars" title="${s.stars.toLocaleString()} GitHub stars">★ ${fmt(s.stars)}</span>
       </div>
     </article>`;
+  }
+  const TREND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>';
+  function trendIcon(s, big = false) {
+    if (!s.r.isTrending) return '';
+    const tip = `Trending: its collection gained +${s.r.trend.toLocaleString()} GitHub stars this week`;
+    return `<span class="trend-ic${big ? ' big' : ''}" title="${esc(tip)}" role="img" aria-label="${esc(tip)}">${TREND_SVG}</span>`;
   }
   function badges(s, extra = '') {
     if (typeof extra !== 'string') extra = ''; // guard against .map(cardHTML) passing an index
@@ -434,7 +447,7 @@
     $('#drawerBody').innerHTML = `
       <div class="d-hero">
         <div class="cat-icon">${catIcon(s.category)}</div>
-        <div><h2 id="dTitle">${esc(s.title)}</h2>${badges(s) || ''}</div>
+        <div><h2 id="dTitle">${esc(s.title)}${trendIcon(s, true)}</h2>${badges(s) || ''}</div>
       </div>
       <p class="d-desc">${esc(s.description)}</p>
       ${keyCallout(s)}
@@ -542,7 +555,7 @@
     return `<div class="cmd"><pre>${esc(text)}</pre><button data-copy="${esc(text)}">Copy</button></div>`;
   }
   function mini(s) {
-    return `<button class="mini" data-id="${esc(s.id)}"><span class="cat-icon">${catIcon(s.category)}</span><span><b>${esc(s.title)}</b><small>${esc(s.description)}</small></span></button>`;
+    return `<button class="mini" data-id="${esc(s.id)}"><span class="cat-icon">${catIcon(s.category)}</span><span><b>${esc(s.title)}${trendIcon(s)}</b><small>${esc(s.description)}</small></span></button>`;
   }
   function closeDrawer(updateURL) {
     if ($('#drawer').hidden) return;
