@@ -78,7 +78,19 @@
     d.repos.forEach(r => state.repoMap.set(r.id, r));
     d.categories.forEach(c => state.catMap.set(c.id, c));
     const newCutoff = Date.now() - NEW_DAYS * 864e5;
-    const firstRun = d.skills.every(s => s.firstSeen === d.skills[0]?.firstSeen);
+    // Skills first seen on the day tracking began are the starting catalogue, not "new".
+    const since = d.stats.trackingSince || (d.skills.every(s => s.firstSeen === d.skills[0]?.firstSeen) ? d.skills[0]?.firstSeen : '');
+    // Real star trends need a few days of history; until then "hot" = popular + recently updated.
+    state.trendReady = (d.stats.trendDays || 0) >= 3;
+    const weekAgo = Date.now() - 7 * 864e5;
+    d.repos.forEach(r => {
+      if (state.trendReady) {
+        const growth = r.trend / Math.max(r.stars - r.trend, 50);
+        r.heat = r.trend > 0 ? Math.log10(r.trend + 1) * 10 + Math.min(growth, 1) * 25 : 0;
+      } else {
+        r.heat = Date.parse(r.pushedAt) > weekAgo ? Math.log10(r.stars + 1) * 10 : 0;
+      }
+    });
     const humanize = n => n.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     state.skills = d.skills.map(s => {
       const r = state.repoMap.get(s.repo) || {};
@@ -91,7 +103,7 @@
         tags: s.tags || [],
         needs: s.needs || [], needsOptional: !!s.needsOptional,
         needsKey: !!(s.needs && s.needs.length && !s.needsOptional),
-        isNew: !firstRun && new Date(s.firstSeen).getTime() > newCutoff,
+        isNew: !!since && s.firstSeen.slice(0, 10) > since.slice(0, 10) && new Date(s.firstSeen).getTime() > newCutoff,
         hayName: (s.name + ' ' + s.title).toLowerCase(),
         hayDesc: s.description.toLowerCase(),
         hayMeta: [s.repo, s.path, cat?.name, ...(s.tags || []).map(t => state.catMap.get(t)?.name), ...(r.topics || []), ...(s.needs || [])].join(' ').toLowerCase(),
@@ -154,7 +166,7 @@
       best: (a, b) => b._score - a._score,
       stars: (a, b) => b.stars - a.stars || a.name.localeCompare(b.name),
       new: (a, b) => b.firstSeen.localeCompare(a.firstSeen) || b._score - a._score,
-      trending: (a, b) => (b.r.trend || 0) - (a.r.trend || 0) || b._score - a._score,
+      trending: (a, b) => (b.r.heat || 0) - (a.r.heat || 0) || b._score - a._score,
       az: (a, b) => a.title.localeCompare(b.title),
     };
     return [...list].sort(sorters[state.sort] || sorters.best);
@@ -164,7 +176,7 @@
   const catIcon = id => state.catMap.get(id)?.icon || '✨';
   const catName = id => state.catMap.get(id)?.name || 'Other';
 
-  function cardHTML(s) {
+  function cardHTML(s, extra = '') {
     const owner = s.repo.split('/')[0];
     return `<article class="card" data-id="${esc(s.id)}" tabindex="0" role="button" aria-label="${esc(s.title)}">
       <button class="save ${state.saved.has(s.id) ? 'on' : ''}" data-save="${esc(s.id)}" aria-label="Save ${esc(s.title)}">${state.saved.has(s.id) ? '♥' : '♡'}</button>
@@ -173,7 +185,7 @@
         <div><h3>${esc(s.title)}</h3><div class="cat-name">${esc(catName(s.category))}</div></div>
       </div>
       <p>${esc(s.description)}</p>
-      ${badges(s)}
+      ${badges(s, extra)}
       <div class="card-foot">
         ${s.r.avatar ? `<img src="${esc(s.r.avatar)}&s=40" alt="" loading="lazy">` : ''}
         <span class="repo" title="${esc(s.repo)}">${esc(owner)} / ${esc(s.repo.split('/')[1])}</span>
@@ -181,10 +193,11 @@
       </div>
     </article>`;
   }
-  function badges(s) {
-    const b = [];
+  function badges(s, extra = '') {
+    if (typeof extra !== 'string') extra = ''; // guard against .map(cardHTML) passing an index
+    const b = extra ? [extra] : [];
     if (s.official) b.push('<span class="badge official">✓ Official</span>');
-    if (s.isNew) b.push('<span class="badge new">New</span>');
+    if (s.isNew && !extra.includes('🆕')) b.push('<span class="badge new">New</span>');
     if (s.needsKey) b.push(`<span class="badge key" title="Needs an account / API key: ${esc(s.needs.join(', '))}">🔑 Needs key</span>`);
     else if (s.needs.length) b.push(`<span class="badge" title="Optional key for extras: ${esc(s.needs.join(', '))}">🔑 Optional key</span>`);
     if (s.r.marketplace) b.push('<span class="badge plugin" title="Installable as a Claude Code plugin">Plugin</span>');
@@ -204,7 +217,40 @@
     const seenRepo = new Set();
     const comm = state.skills.filter(s => !s.official).sort((a, b) => b.base - a.base)
       .filter(s => !seenRepo.has(s.repo) && seenRepo.add(s.repo)).slice(0, 12 - Math.min(off.length, 8));
-    $('#startRail').innerHTML = [...off, ...comm].map(cardHTML).join('');
+    $('#startRail').innerHTML = [...off, ...comm].map(s => cardHTML(s)).join('');
+
+    // Trending: hottest repos first, at most 2 skills per repo so one big collection can't take over.
+    const trend = diverse(state.skills.filter(s => s.r.heat > 0).sort((a, b) => b.r.heat - a.r.heat || b.base - a.base));
+    if (trend.length >= 4) {
+      $('#trendTitle').textContent = state.trendReady ? '🔥 Trending this week' : '🔥 Popular & active this week';
+      $('#trendSub').textContent = state.trendReady
+        ? 'Skills whose collections gained the most GitHub stars in the last 7 days.'
+        : 'Well-loved skills from collections that were updated in the last few days.';
+      $('#trendRail').innerHTML = trend.map(s => cardHTML(s, state.trendReady
+        ? `<span class="badge hot" title="New GitHub stars on ${esc(s.repo)} in the last ${s.r.trendDays} days">🔥 +${fmt(s.r.trend)} ★ this week</span>`
+        : `<span class="badge hot">🔄 updated ${ago(s.r.pushedAt)}</span>`)).join('');
+      state.hasTrend = true;
+    }
+    // Just added: newest first.
+    const fresh = diverse(state.skills.filter(s => s.isNew).sort((a, b) => b.firstSeen.localeCompare(a.firstSeen) || b.base - a.base));
+    if (fresh.length >= 4) {
+      $('#newRail').innerHTML = fresh.map(s => cardHTML(s, `<span class="badge new">🆕 ${addedAgo(s.firstSeen)}</span>`)).join('');
+      state.hasNew = true;
+    }
+  }
+  function diverse(list, perRepo = 2, n = 12) {
+    const per = new Map(); const out = [];
+    for (const s of list) {
+      const c = per.get(s.repo) || 0;
+      if (c >= perRepo) continue;
+      per.set(s.repo, c + 1); out.push(s);
+      if (out.length >= n) break;
+    }
+    return out;
+  }
+  function addedAgo(date) {
+    const days = Math.floor((Date.now() - Date.parse(date.slice(0, 10))) / 864e5);
+    return days <= 0 ? 'added today' : days === 1 ? 'added yesterday' : `added ${days} days ago`;
   }
 
   function renderBrowse() {
@@ -212,6 +258,8 @@
     const filtersOn = state.q || state.cat || state.repo || state.source !== 'all' || state.keys !== 'any';
     $('#catBlock').hidden = !!filtersOn;
     $('#startBlock').hidden = !!filtersOn;
+    $('#trendBlock').hidden = !!filtersOn || !state.hasTrend;
+    $('#newBlock').hidden = !!filtersOn || !state.hasNew;
 
     // Sidebar counts reflect everything except the category filter.
     const saveCat = state.cat; state.cat = '';
@@ -233,7 +281,7 @@
     $('#activeFilters').innerHTML = af.join('');
     $('#noKeyBtn').setAttribute('aria-pressed', String(state.keys === 'none'));
 
-    $('#grid').innerHTML = list.slice(0, state.shown).map(cardHTML).join('');
+    $('#grid').innerHTML = list.slice(0, state.shown).map(s => cardHTML(s)).join('');
     $('#empty').hidden = list.length > 0;
     $('#more').hidden = list.length <= state.shown;
     $('#moreBtn').textContent = `Show more (${(list.length - state.shown).toLocaleString()} left)`;
@@ -255,7 +303,7 @@
 
   function renderSaved() {
     const list = state.skills.filter(s => state.saved.has(s.id));
-    $('#savedGrid').innerHTML = list.map(cardHTML).join('');
+    $('#savedGrid').innerHTML = list.map(s => cardHTML(s)).join('');
     $('#savedEmpty').hidden = list.length > 0;
   }
 
@@ -336,6 +384,8 @@
     if (sug) { $('#q').value = sug.dataset.suggest; update({ q: sug.dataset.suggest }, true); return; }
     const cat = t.closest('[data-cat]');
     if (cat) { update({ cat: cat.dataset.cat }, !!cat.closest('#catGrid')); return; }
+    const see = t.closest('[data-see]');
+    if (see) { update({ sort: see.dataset.see }, true); return; }
     const src = t.closest('[data-source]');
     if (src) { update({ source: src.dataset.source }); return; }
     const clr = t.closest('[data-clear]');

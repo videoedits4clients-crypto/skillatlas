@@ -267,6 +267,9 @@ async function main() {
     ? JSON.parse(await readFile(STATE_FILE, 'utf8'))
     : { shaCache: {}, firstSeen: {}, starHistory: {} };
   state.lastSeen ||= {};
+  // The day tracking began. Skills first seen on that day are the starting catalogue, not "new".
+  state.since ||= Object.values(state.firstSeen).sort()[0]?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+  let maxTrendDays = 0;
   const usedShas = new Set();
 
   // Last published output: used as a fallback when a repo can't be scanned this run
@@ -325,6 +328,8 @@ async function main() {
     const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
     const base = hist.find(([d]) => d >= weekAgo) || hist[0];
     const trend = r.stargazerCount - base[1];
+    const trendDays = Math.round((Date.parse(today) - Date.parse(base[0])) / 864e5);
+    if (trendDays > maxTrendDays) maxTrendDays = trendDays;
 
     outRepos.push({
       id,
@@ -332,6 +337,7 @@ async function main() {
       description: truncate(clean(r.description), 300),
       stars: r.stargazerCount,
       trend,
+      trendDays,
       branch: r.defaultBranchRef.name,
       pushedAt: r.pushedAt,
       license: r.licenseInfo?.spdxId && r.licenseInfo.spdxId !== 'NOASSERTION' ? r.licenseInfo.spdxId : null,
@@ -430,7 +436,7 @@ async function main() {
 
   const out = {
     generatedAt: now,
-    stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
+    stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, trendDays: maxTrendDays, trackingSince: state.since, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
     categories: CATEGORIES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: counts[id] || 0 })),
     repos: finalRepos,
     skills: slim,
