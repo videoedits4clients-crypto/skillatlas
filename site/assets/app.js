@@ -29,7 +29,7 @@
 
   const state = {
     data: null, skills: [], repoMap: new Map(), catMap: new Map(),
-    q: '', cat: '', repo: '', source: 'all', sort: 'best', shown: PAGE, view: 'browse',
+    q: '', cat: '', repo: '', source: 'all', keys: 'any', sort: 'best', shown: PAGE, view: 'browse',
     saved: new Set(store.get('saved', [])), openId: null, lastFocus: null,
   };
 
@@ -89,10 +89,12 @@
         title: humanize(s.name),
         file: s.file || (s.path ? s.path + '/' : '') + 'SKILL.md',
         tags: s.tags || [],
+        needs: s.needs || [], needsOptional: !!s.needsOptional,
+        needsKey: !!(s.needs && s.needs.length && !s.needsOptional),
         isNew: !firstRun && new Date(s.firstSeen).getTime() > newCutoff,
         hayName: (s.name + ' ' + s.title).toLowerCase(),
         hayDesc: s.description.toLowerCase(),
-        hayMeta: [s.repo, s.path, cat?.name, ...(s.tags || []).map(t => state.catMap.get(t)?.name), ...(r.topics || [])].join(' ').toLowerCase(),
+        hayMeta: [s.repo, s.path, cat?.name, ...(s.tags || []).map(t => state.catMap.get(t)?.name), ...(r.topics || []), ...(s.needs || [])].join(' ').toLowerCase(),
       };
       sk.base = Math.log10(sk.stars + 1) * 10 + (sk.official ? 25 : 0) + (sk.isNew ? 3 : 0) + Math.min(s.description.length, 200) / 100 - (r.archived ? 10 : 0);
       return sk;
@@ -104,6 +106,7 @@
     $('#stats').innerHTML = [
       [d.stats.skills, 'skills'], [d.stats.repos, 'collections'],
       [d.categories.filter(c => c.count).length, 'categories'],
+      [state.skills.filter(s => !s.needsKey).length, 'need no extra API key'],
       ...(newCount ? [[newCount, `new this week`]] : []),
     ].map(([n, l]) => `<div class="stat"><b>${n.toLocaleString()}</b><span>${l}</span></div>`).join('');
 
@@ -142,6 +145,7 @@
     if (state.repo) list = list.filter(s => s.repo === state.repo);
     if (state.source === 'official') list = list.filter(s => s.official);
     if (state.source === 'community') list = list.filter(s => !s.official);
+    if (state.keys === 'none') list = list.filter(s => !s.needsKey);
     if (toks.length) {
       list = list.map(s => ({ s, m: scoreSkill(s, toks) })).filter(x => x.m > 0)
         .map(x => (x.s._score = x.m * 4 + x.s.base, x.s));
@@ -181,6 +185,8 @@
     const b = [];
     if (s.official) b.push('<span class="badge official">✓ Official</span>');
     if (s.isNew) b.push('<span class="badge new">New</span>');
+    if (s.needsKey) b.push(`<span class="badge key" title="Needs an account / API key: ${esc(s.needs.join(', '))}">🔑 Needs key</span>`);
+    else if (s.needs.length) b.push(`<span class="badge" title="Optional key for extras: ${esc(s.needs.join(', '))}">🔑 Optional key</span>`);
     if (s.r.marketplace) b.push('<span class="badge plugin" title="Installable as a Claude Code plugin">Plugin</span>');
     if (s.r.archived) b.push('<span class="badge">Archived</span>');
     return b.length ? `<div class="badges">${b.join('')}</div>` : '';
@@ -203,7 +209,7 @@
 
   function renderBrowse() {
     const list = filtered();
-    const filtersOn = state.q || state.cat || state.repo || state.source !== 'all';
+    const filtersOn = state.q || state.cat || state.repo || state.source !== 'all' || state.keys !== 'any';
     $('#catBlock').hidden = !!filtersOn;
     $('#startBlock').hidden = !!filtersOn;
 
@@ -223,7 +229,9 @@
     if (state.cat) af.push(`<button class="af" data-clear="cat">${catIcon(state.cat)} ${esc(catName(state.cat))}</button>`);
     if (state.repo) af.push(`<button class="af" data-clear="repo">📦 ${esc(state.repo)}</button>`);
     if (state.source !== 'all') af.push(`<button class="af" data-clear="source">${state.source === 'official' ? 'Official only' : 'Community only'}</button>`);
+    if (state.keys === 'none') af.push('<button class="af" data-clear="keys">🔓 No API key needed</button>');
     $('#activeFilters').innerHTML = af.join('');
+    $('#noKeyBtn').setAttribute('aria-pressed', String(state.keys === 'none'));
 
     $('#grid').innerHTML = list.slice(0, state.shown).map(cardHTML).join('');
     $('#empty').hidden = list.length > 0;
@@ -264,6 +272,7 @@
     state.cat = p.get('cat') || '';
     state.repo = p.get('repo') || '';
     state.source = p.get('source') || 'all';
+    state.keys = p.get('keys') === 'none' ? 'none' : 'any';
     state.sort = p.get('sort') || 'best';
     state.openId = p.get('skill');
     $('#q').value = state.q;
@@ -275,6 +284,7 @@
     if (state.cat) p.set('cat', state.cat);
     if (state.repo) p.set('repo', state.repo);
     if (state.source !== 'all') p.set('source', state.source);
+    if (state.keys !== 'any') p.set('keys', state.keys);
     if (state.sort !== 'best') p.set('sort', state.sort);
     if (state.openId) p.set('skill', state.openId);
     const url = location.pathname + (p.toString() ? '?' + p : '');
@@ -311,14 +321,15 @@
   });
   $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(qT); update({ q: e.target.value.trim() }, true); } });
   $('#sort').addEventListener('change', e => update({ sort: e.target.value }));
+  $('#noKeyBtn').addEventListener('click', () => update({ keys: state.keys === 'none' ? 'any' : 'none' }));
   $('#repoQ').addEventListener('input', renderCollections);
   $('#moreBtn').addEventListener('click', () => { state.shown += PAGE; renderBrowse(); });
-  $('#clearAll').addEventListener('click', () => { $('#q').value = ''; update({ q: '', cat: '', repo: '', source: 'all' }); });
+  $('#clearAll').addEventListener('click', () => { $('#q').value = ''; update({ q: '', cat: '', repo: '', source: 'all', keys: 'any' }); });
 
   document.addEventListener('click', e => {
     const t = e.target;
     const nav = t.closest('[data-nav]');
-    if (nav) { e.preventDefault(); const v = nav.dataset.nav; if (v === 'browse') { $('#q').value = ''; go('browse', { q: '', cat: '', repo: '', source: 'all' }); } else go(v); return; }
+    if (nav) { e.preventDefault(); const v = nav.dataset.nav; if (v === 'browse') { $('#q').value = ''; go('browse', { q: '', cat: '', repo: '', source: 'all', keys: 'any' }); } else go(v); return; }
     const save = t.closest('[data-save]');
     if (save) { e.stopPropagation(); toggleSave(save.dataset.save); return; }
     const sug = t.closest('[data-suggest]');
@@ -328,7 +339,7 @@
     const src = t.closest('[data-source]');
     if (src) { update({ source: src.dataset.source }); return; }
     const clr = t.closest('[data-clear]');
-    if (clr) { const k = clr.dataset.clear; if (k === 'q') $('#q').value = ''; update({ [k]: k === 'source' ? 'all' : '' }); return; }
+    if (clr) { const k = clr.dataset.clear; if (k === 'q') $('#q').value = ''; update({ [k]: k === 'source' ? 'all' : k === 'keys' ? 'any' : '' }); return; }
     const repo = t.closest('[data-repo]');
     if (repo) { closeDrawer(false); state.openId = null; go('browse', { repo: repo.dataset.repo, q: '', cat: '' }); $('#q').value = ''; setTimeout(() => $('#results').scrollIntoView({ block: 'start' }), 0); return; }
     const card = t.closest('[data-id]');
@@ -376,6 +387,7 @@
         <div><h2 id="dTitle">${esc(s.title)}</h2>${badges(s) || ''}</div>
       </div>
       <p class="d-desc">${esc(s.description)}</p>
+      ${keyCallout(s)}
       <div class="d-actions">
         <button class="btn" id="dlBtn">⬇ Download .zip</button>
         <a class="btn ghost" href="${treeURL(s)}" target="_blank" rel="noopener">View on GitHub ↗</a>
@@ -387,6 +399,7 @@
         <div><small>Collection</small><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(s.repo)}</a></div>
         <div><small>Stars</small><span>★ ${(s.stars).toLocaleString()}${r.trend > 0 ? ` <span class="muted">(+${fmt(r.trend)} this week)</span>` : ''}</span></div>
         <div><small>License</small><span>${esc(s.license || r.license || 'Not stated')}</span></div>
+        <div><small>Extra API key</small><span>${s.needsKey ? '🔑 ' + esc(s.needs.join(', ')) : s.needs.length ? 'Optional' : '🔓 None detected'}</span></div>
         <div><small>Files</small><span>${s.fileCount}</span></div>
         <div><small>Repo updated</small><span>${ago(r.pushedAt)}</span></div>
       </div>
@@ -467,6 +480,13 @@
     filesPromise ||= fetch('data/files.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
     const map = await filesPromise;
     return map[s.id] || null;
+  }
+  function keyCallout(s) {
+    const names = s.needs.filter(n => n !== 'API key');
+    const list = names.length ? '<b>' + names.map(esc).join(', ') + '</b>' : 'an outside service';
+    if (s.needsKey) return `<div class="callout key"><span>🔑</span><div>Needs your own account or API key for ${list}. Some of these services charge, so check their pricing first.<small>Detected automatically from the skill's instructions, so it may not be exact.</small></div></div>`;
+    if (s.needs.length) return `<div class="callout free"><span>🔓</span><div>Works without extra keys. An optional key for ${list} unlocks extras or higher limits.<small>Detected automatically from the skill's instructions, so it may not be exact.</small></div></div>`;
+    return `<div class="callout free"><span>🔓</span><div>No extra account or API key detected. It should work with just your AI assistant.<small>Checked automatically from the skill's instructions, so it may not be exact.</small></div></div>`;
   }
   function cmd(text) {
     return `<div class="cmd"><pre>${esc(text)}</pre><button data-copy="${esc(text)}">Copy</button></div>`;

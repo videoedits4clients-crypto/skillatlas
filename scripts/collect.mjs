@@ -15,6 +15,10 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, classify } from './categories.mjs';
+import { detectRequirements, needsFor } from './requirements.mjs';
+
+// Bump when the per-file data extracted from SKILL.md changes, so cached entries are re-read.
+const CACHE_VERSION = 3;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = JSON.parse(await readFile(join(ROOT, 'config/sources.json'), 'utf8'));
@@ -223,7 +227,7 @@ async function scanRepo(repo, shaCache) {
   const skills = await pool(skillFiles, 12, async file => {
     const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
     let fm = shaCache[file.sha];
-    if (!fm) {
+    if (!fm || fm.v !== CACHE_VERSION) {
       const url = `https://raw.githubusercontent.com/${repo.nameWithOwner}/${encodeURIComponent(branch)}/${file.path.split('/').map(encodeURIComponent).join('/')}`;
       const text = await gh(url, { raw: true });
       if (text == null) return null;
@@ -233,6 +237,8 @@ async function scanRepo(repo, shaCache) {
         description: truncate(clean(parsed.description), L.maxDescriptionChars),
         license: clean(parsed.license).slice(0, 60),
         bytes: text.length,
+        req: detectRequirements(text),
+        v: CACHE_VERSION,
       };
       shaCache[file.sha] = fm;
     }
@@ -346,6 +352,7 @@ async function main() {
           id: sid, name: p.name, title: humanize(p.name), description: p.description, repo: id, path: p.path,
           file: p.file || (p.path ? p.path + '/' : '') + 'SKILL.md', category: p.category, tags: p.tags || [],
           license: p.license || null, files: prevFiles[sid] ?? null, fileCount: p.fileCount,
+          needs: p.needs || [], needsOptional: !!p.needsOptional,
           firstSeen: state.firstSeen[sid], stars: r.stargazerCount, official: ownerOfficial,
         });
       }
@@ -360,6 +367,7 @@ async function main() {
       state.firstSeen[skillId] ||= now;
       state.lastSeen[skillId] = today;
       const { category, tags } = classify({ name, description: s.fm.description, path: s.dir, repo: id });
+      const { needs, optional } = needsFor(s.fm.req, category, s.files);
       skills.push({
         id: skillId,
         name,
@@ -372,6 +380,8 @@ async function main() {
         tags,
         license: s.fm.license || null,
         files: s.files,
+        needs,
+        needsOptional: optional,
         fileCount: s.fileCount,
         firstSeen: state.firstSeen[skillId],
         stars: r.stargazerCount,
@@ -407,6 +417,8 @@ async function main() {
     o.fileCount = s.fileCount;
     o.firstSeen = s.firstSeen.slice(0, 10);
     if (s.copies) o.copies = s.copies;
+    if (s.needs?.length) o.needs = s.needs;
+    if (s.needsOptional) o.needsOptional = true;
     return o;
   });
 
@@ -418,7 +430,7 @@ async function main() {
 
   const out = {
     generatedAt: now,
-    stats: { skills: skills.length, repos: finalRepos.length, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
+    stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
     categories: CATEGORIES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: counts[id] || 0 })),
     repos: finalRepos,
     skills: slim,

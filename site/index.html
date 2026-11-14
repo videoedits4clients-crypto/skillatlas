@@ -80,6 +80,7 @@
                 <button data-source="official">Official</button>
                 <button data-source="community">Community</button>
               </div>
+              <button class="toggle" id="noKeyBtn" aria-pressed="false" title="Hide skills that need an outside account or API key">🔓 No API key needed</button>
               <label class="select">
                 <span class="sr">Sort by</span>
                 <select id="sort">
@@ -160,6 +161,7 @@
               <li><b>Start with a category</b> that matches your goal, not a tool name.</li>
               <li><b>Prefer “Official”</b> skills (made by Anthropic) when one exists.</li>
               <li><b>Stars</b> show how many people trust the collection it comes from.</li>
+              <li><b>Watch for 🔑 Needs key</b>: that skill needs an account with an outside service, which may cost money.</li>
               <li><b>Read the preview</b> — a good skill explains clearly when it should be used.</li>
             </ul>
           </article>
@@ -180,6 +182,7 @@
 
         <h2 class="faq-title">Questions people ask</h2>
         <details class="faq"><summary>How often is this updated?</summary><p>Twice a day. A scheduled job scans GitHub for repositories that contain <code>SKILL.md</code> files, reads each skill's name and description, sorts it into a category, and republishes the site.</p></details>
+        <details class="faq"><summary>Do skills cost money? What does “Needs key” mean?</summary><p>Skills themselves are free to download. Most only need your AI assistant (Claude or another agent). Some connect to an outside service such as OpenAI, ElevenLabs or Composio, and you'd need your own account or API key there. Those services may charge. Skills like this show a 🔑 <b>Needs key</b> badge naming the service, and <b>Optional key</b> means it works without one. Turn on <b>🔓 No API key needed</b> above the results to hide them. This is detected automatically from each skill's instructions, so treat it as a strong hint, not a guarantee.</p></details>
         <details class="faq"><summary>Where do the skills come from?</summary><p>Anthropic's official repositories, well-known curated “awesome” lists, and public GitHub repositories tagged with topics like <code>claude-skills</code> or <code>agent-skills</code>. Repos need a minimum number of stars to be listed, which filters out most spam and experiments.</p></details>
         <details class="faq"><summary>Why do I see the same skill name twice?</summary><p>Different authors sometimes publish skills with the same name. Exact copies are merged into the most-starred source; genuinely different versions are kept so you can compare.</p></details>
         <details class="faq"><summary>A category looks wrong.</summary><p>Categories are assigned automatically from each skill's name and description, so a few will be off. The search box looks at everything, so searching is the fastest way to find something specific.</p></details>

@@ -47,6 +47,7 @@ config/sources.json
 - Search in plain words: "make slides" also finds `pptx` skills.
 - 15 categories, an official-or-community filter, and sorting by recommended, stars, newest, trending, or A–Z.
 - A "start here" row of official and top community skills for newcomers.
+- **🔑 Needs key / Optional key badges** naming the outside service a skill needs (OpenAI, Composio, ElevenLabs…), plus a **"No API key needed"** filter. This is a best guess from each SKILL.md's text (`scripts/requirements.mjs`), labelled on the site as automatic.
 - A detail panel for each skill with a rendered `SKILL.md` preview, its file list, similar skills, and more skills from the same repo.
 - **Download .zip**, built in the browser straight from GitHub's files. It's ready to upload to Claude's Settings → Capabilities → Skills.
 - Copy-ready install commands for Claude Code, the plugin marketplace, and other agents.
