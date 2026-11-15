@@ -36,6 +36,8 @@ if (!TOKEN) {
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let apiCalls = 0;
+const API_VERSION = '2026-03-10';
+let sunsetWarned = false;
 
 // ---------- HTTP helpers ----------
 
@@ -51,7 +53,9 @@ async function gh(url, { method = 'GET', body, raw = false, tries = 4 } = {}) {
         headers: raw ? {} : {
           Authorization: `Bearer ${TOKEN}`,
           Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
+          // Pinned REST API version. GitHub supports each version for 24+ months after the next
+          // one ships; the collector logs a warning (below) when this one gets a sunset date.
+          'X-GitHub-Api-Version': API_VERSION,
           'User-Agent': 'skill-directory-collector',
         },
         signal: AbortSignal.timeout(30_000),
@@ -60,6 +64,10 @@ async function gh(url, { method = 'GET', body, raw = false, tries = 4 } = {}) {
       if (attempt === tries) throw e;
       await sleep(1000 * attempt);
       continue;
+    }
+    if (!raw && !sunsetWarned && res.headers.get('sunset')) {
+      sunsetWarned = true;
+      log(`::warning::GitHub API version ${API_VERSION} stops working on ${res.headers.get('sunset')}. Update API_VERSION in scripts/collect.mjs (see docs.github.com/rest/about-the-rest-api/breaking-changes).`);
     }
     if (res.ok) return raw ? res.text() : res.json();
     if (res.status === 404 || res.status === 409 || res.status === 451) return null; // missing / empty / blocked
