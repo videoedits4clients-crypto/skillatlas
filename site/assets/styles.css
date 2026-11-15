@@ -323,3 +323,30 @@ h1 { font-size: clamp(34px, 5.5vw, 56px); line-height: 1.05; letter-spacing: -.0
   .toolbar-right { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- Subscribe popup ---------- */
+.sub-popup {
+  position: fixed; z-index: 60; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(92vw, 420px); background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e2da); border-radius: 16px;
+  padding: 28px 26px 24px; box-shadow: 0 24px 64px rgba(0,0,0,.28);
+  text-align: center;
+}
+.sub-popup .sub-close { position: absolute; top: 10px; right: 10px; }
+.sub-mark { font-size: 40px; line-height: 1; }
+.sub-popup h3 { margin: 10px 0 6px; font-size: 19px; color: var(--text); }
+.sub-popup p { margin: 0 0 16px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.sub-popup form { display: flex; gap: 8px; }
+.sub-popup input {
+  flex: 1; min-width: 0; padding: 11px 13px; border-radius: 10px;
+  border: 1px solid var(--border-strong, #d0cdc5); background: var(--bg-2, #f3f1ec);
+  color: var(--text); font: inherit;
+}
+.sub-popup input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.sub-popup form button {
+  padding: 11px 14px; border-radius: 10px; border: 0; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; white-space: nowrap;
+}
+.sub-msg { margin-top: 12px; font-size: 13.5px; font-weight: 600; }
+.sub-msg.ok { color: #1a7f37; }
+.sub-msg.err { color: #c0392b; }
