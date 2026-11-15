@@ -210,6 +210,9 @@ async function fetchRepoMeta(candidates) {
 
 // ---------- 3/4. Trees + SKILL.md ----------
 
+// Folders that hold test data, not skills meant for people to install.
+const TEST_PATH = /(^|\/)(tests?|__tests__|evals?|fixtures?|testdata|test[-_]data|mocks?|benchmarks?|e2e|snapshots?|specs?|golden)\//i;
+const HOSTILE_NAME = /(^|\/)[^\/]*(malicious|exfiltrat|backdoor|supply-chain-attack|prompt-injection-sample)[^\/]*(\/|$)/i;
 const SKIP_PATH = /(^|\/)(node_modules|\.git|vendor|dist|build|__pycache__|\.venv|site-packages)\//i;
 
 let treeCalls = 0;
@@ -450,6 +453,22 @@ async function main() {
     }
   });
 
+  // Leave out anything that isn't a real, installable skill:
+  //  - test / eval / fixture folders. Security-scanner repos keep deliberately malicious sample
+  //    skills there, and we must never offer those for download.
+  //  - folders whose name says the sample is hostile.
+  const before = skills.length;
+  skills = skills.filter(s => !TEST_PATH.test(s.path + '/') && !HOSTILE_NAME.test(s.path));
+  // One skill per folder (some folders hold both SKILL.md and skill.md).
+  const perFolder = new Map();
+  for (const s of skills) {
+    const kept = perFolder.get(s.id);
+    const exact = x => /(^|\/)SKILL\.md$/.test(x.file); // prefer the canonical upper-case file name
+    if (!kept || (exact(s) && !exact(kept))) perFolder.set(s.id, s);
+  }
+  skills = [...perFolder.values()];
+  log(`left out ${before - skills.length} test/fixture/duplicate-folder skills`);
+
   // De-duplicate copies of the same skill across repos (keep the most-starred source).
   const seen = new Map();
   skills.sort((a, b) => Number(b.official) - Number(a.official) || b.stars - a.stars);
@@ -461,7 +480,7 @@ async function main() {
     return true;
   });
   // Drop template / placeholder skills with no usable description.
-  skills = skills.filter(s => s.description && !/^(todo|tbd|replace|a clear description)/i.test(s.description));
+  skills = skills.filter(s => s.description && s.description.length >= 12 && !/^(todo|tbd|replace|a clear description|sample skill|test skill|synthetic fixture)/i.test(s.description));
   skills.forEach(s => { if (!s.copies) delete s.copies; delete s.stars; delete s.official; });
   skills.sort((a, b) => a.id.localeCompare(b.id));
 

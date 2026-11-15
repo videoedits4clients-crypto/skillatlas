@@ -113,7 +113,7 @@
       const n = Math.min(15, Math.max(5, Math.round(d.repos.length * 0.04)));
       hot.slice(0, n).forEach(r => (r.isTrending = true));
     }
-    const humanize = n => n.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const humanize = n => n.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase()) || n;
     state.skills = d.skills.map(s => {
       const r = state.repoMap.get(s.repo) || {};
       const cat = state.catMap.get(s.category);
@@ -131,7 +131,7 @@
         hayDesc: s.description.toLowerCase(),
         hayMeta: [s.repo, s.path, cat?.name, ...(s.tags || []).map(t => state.catMap.get(t)?.name), ...(r.topics || []), ...(s.needs || []), ...(s.niches || []).map(n => state.nicheMap.get(n)?.name)].join(' ').toLowerCase(),
       };
-      sk.base = Math.log10(sk.stars + 1) * 10 + (sk.official ? 25 : 0) + (sk.isNew ? 3 : 0) + (r.isRising ? 6 : 0) + Math.min(s.description.length, 200) / 100 - (r.archived ? 10 : 0);
+      sk.base = Math.log10(sk.stars + 1) * 10 + (sk.official ? 10 : 0) + (sk.isNew ? 3 : 0) + (r.isRising ? 6 : 0) + Math.min(s.description.length, 200) / 100 - (r.archived ? 10 : 0);
       return sk;
     });
 
@@ -206,7 +206,7 @@
     if (state.lane === 'gems') list = list.filter(s => s.gem);
     if (toks.length) {
       list = list.map(s => ({ s, m: scoreSkill(s, toks) })).filter(x => x.m > 0)
-        .map(x => (x.s._score = x.m * 4 + x.s.base, x.s));
+        .map(x => (x.s._score = x.m * 4 + x.s.base + (x.s.official ? 15 : 0), x.s));
     } else list = list.map(s => (s._score = s.base, s));
     // On a niche page, skills that are mainly about this niche come before ones that only touch it.
     if (state.niche) list.forEach(s => { const i = s.niches.indexOf(state.niche); s._score += i === 0 ? 14 : i === 1 ? 5 : 0; });
@@ -218,9 +218,16 @@
       rising: (a, b) => (b.r.velocity || 0) - (a.r.velocity || 0) || b._score - a._score,
       updated: (a, b) => (b.r.pushedAt || '').localeCompare(a.r.pushedAt || '') || b._score - a._score,
       gems: (a, b) => gemScore(b) - gemScore(a),
-      az: (a, b) => a.title.localeCompare(b.title),
+      az: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }),
     };
     const sorted = [...list].sort(sorters[state.sort] || sorters.best);
+    if ((state.sort === 'best' || !sorters[state.sort]) && !toks.length && !state.repo) {
+      // Browsing (no search): each further skill from the same collection ranks a little lower,
+      // so the first pages show a mix instead of one big collection after another.
+      const seen = new Map();
+      sorted.forEach(s => { const k = seen.get(s.repo) || 0; seen.set(s.repo, k + 1); s._adj = s._score - Math.min(k * 3, 45); });
+      sorted.sort((a, b) => b._adj - a._adj);
+    }
     if (state.sort === 'gems' || state.sort === 'rising') {
       // Best skill of every collection first, then everyone's second-best, and so on,
       // so one big collection can't fill the whole page.
@@ -253,10 +260,12 @@
     </article>`;
   }
   const TREND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>';
+  // Say the period we actually measured: star history may be younger than a week.
+  const trendPeriod = r => r.trendDays >= 6 ? 'this week' : r.trendDays === 1 ? 'since yesterday' : `in ${r.trendDays} days`;
   const trendIcon = (s, big = false) => trendIconR(s.r, big, 'its collection');
   function trendIconR(r, big = false, who = 'this pack') {
     if (!r.isTrending) return '';
-    const tip = `Trending: ${who} gained +${r.trend.toLocaleString()} GitHub stars this week`;
+    const tip = `Trending: ${who} gained +${r.trend.toLocaleString()} GitHub stars ${trendPeriod(r)}`;
     return `<span class="trend-ic${big ? ' big' : ''}" title="${esc(tip)}" role="img" aria-label="${esc(tip)}">${TREND_SVG}</span>`;
   }
   function badges(s, extra = '') {
@@ -304,12 +313,12 @@
     // Trending: hottest repos first, at most 2 skills per repo so one big collection can't take over.
     const trend = diverse(state.skills.filter(s => s.r.heat > 0).sort((a, b) => b.r.heat - a.r.heat || b.base - a.base));
     if (trend.length >= 4) {
-      $('#trendTitle').textContent = state.trendReady ? '🔥 Trending this week' : '🔥 Popular & active this week';
+      $('#trendTitle').textContent = state.trendReady ? (state.data.stats.trendDays >= 6 ? '🔥 Trending this week' : '🔥 Trending now') : '🔥 Popular & active this week';
       $('#trendSub').textContent = state.trendReady
-        ? 'Skills whose collections gained the most GitHub stars in the last 7 days.'
+        ? `Skills whose collections gained the most GitHub stars in the last ${Math.min(7, state.data.stats.trendDays)} days.`
         : 'Well-loved skills from collections that were updated in the last few days.';
       $('#trendRail').innerHTML = trend.map(s => cardHTML(s, state.trendReady
-        ? `<span class="badge hot" title="New GitHub stars on ${esc(s.repo)} in the last ${s.r.trendDays} days">🔥 +${fmt(s.r.trend)} ★ this week</span>`
+        ? `<span class="badge hot" title="New GitHub stars on ${esc(s.repo)} in the last ${s.r.trendDays} days">🔥 +${fmt(s.r.trend)} ★ ${trendPeriod(s.r)}</span>`
         : `<span class="badge hot">🔄 updated ${ago(s.r.pushedAt)}</span>`)).join('');
       state.hasTrend = true;
     }
@@ -462,7 +471,7 @@
     $('#sort').value = state.sort;
   }
 
-  function renderCollections() {
+  function renderCollections(more) {
     const q = $('#repoQ').value.toLowerCase().trim();
     const theme = $('#packTheme').value, niche = $('#packNiche').value, sort = $('#packSort').value;
     const noKey = $('#packNoKey').getAttribute('aria-pressed') === 'true';
@@ -487,7 +496,11 @@
     }
     const nicheNote = r => niche ? `<span class="badge">${nicheIcon(niche)} ${r.nicheCounts[niche]} for ${esc(nicheName(niche))}</span>` : '';
     $('#packCount').textContent = `${repos.length.toLocaleString()} pack${repos.length === 1 ? '' : 's'}`;
-    $('#repoList').innerHTML = repos.slice(0, 150).map(r => `<button class="repo-row" data-repo="${esc(r.id)}">
+    // Any filter change starts again from the first 60; only the button asks for more.
+    if (more !== true) state.packShown = 60;
+    $('#packMore').hidden = repos.length <= state.packShown;
+    $('#packMoreBtn').textContent = `Show more (${(repos.length - state.packShown).toLocaleString()} left)`;
+    $('#repoList').innerHTML = repos.slice(0, state.packShown).map(r => `<button class="repo-row" data-repo="${esc(r.id)}">
       <img src="${esc(r.avatar)}&s=88" alt="" loading="lazy">
       <div><h3>${esc(r.id)}${trendIconR(r)}</h3>
       <p>${esc(r.description || 'No description')}</p>
@@ -569,8 +582,9 @@
   $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(qT); update({ q: e.target.value.trim() }, true); } });
   $('#sort').addEventListener('change', e => update({ sort: e.target.value }));
   $('#noKeyBtn').addEventListener('click', () => update({ keys: state.keys === 'none' ? 'any' : 'none' }));
-  $('#repoQ').addEventListener('input', renderCollections);
-  ['#packTheme', '#packNiche', '#packSort'].forEach(sel => $(sel).addEventListener('change', renderCollections));
+  $('#repoQ').addEventListener('input', () => renderCollections());
+  $('#packMoreBtn').addEventListener('click', () => { state.packShown += 60; renderCollections(true); });
+  ['#packTheme', '#packNiche', '#packSort'].forEach(sel => $(sel).addEventListener('change', () => renderCollections()));
   $('#packNoKey').addEventListener('click', e => { const b = e.currentTarget; b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); renderCollections(); });
   $('#moreBtn').addEventListener('click', () => { state.shown += PAGE; renderBrowse(); });
   $('#clearAll').addEventListener('click', () => { $('#q').value = ''; update({ q: '', cat: '', niche: '', lane: '', repo: '', source: 'all', keys: 'any', sort: 'best' }); });
@@ -655,7 +669,7 @@
       <div class="d-meta">
         <div><small>Category</small><span>${catIcon(s.category)} ${esc(catName(s.category))}</span></div>
         <div><small>Collection</small><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(s.repo)}</a></div>
-        <div><small>Stars</small><span>★ ${(s.stars).toLocaleString()}${r.trend > 0 ? ` <span class="muted">(+${fmt(r.trend)} this week)</span>` : ''}</span></div>
+        <div><small>Stars</small><span>★ ${(s.stars).toLocaleString()}${r.trend > 0 && r.trendDays >= 1 ? ` <span class="muted">(+${fmt(r.trend)} ${trendPeriod(r)})</span>` : ''}</span></div>
         <div><small>License</small><span>${esc(s.license || r.license || 'Not stated')}</span></div>
         <div><small>Extra API key</small><span>${s.needsKey ? '🔑 ' + esc(s.needs.join(', ')) : s.needs.length ? 'Optional' : '🔓 None detected'}</span></div>
         <div><small>Files</small><span>${s.fileCount}</span></div>
