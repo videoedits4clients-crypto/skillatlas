@@ -1,6 +1,11 @@
 name: Update skills & deploy
 
-# Runs every 2 hours, on every code push to main, and on demand (Actions tab → Run workflow).
+# Refreshes the site about every 2 hours, on every code push to main, and on demand
+# (Actions tab → Run workflow).
+#
+# GitHub's scheduler is best-effort: on small repos it often starts scheduled runs hours late
+# or drops them. So the schedule fires every 30 minutes and a run exits in a few seconds
+# unless the data is at least 100 minutes old. Many cheap attempts, one real run per ~2 hours.
 #
 # Long-term design:
 # - Generated data is NOT committed to main. It lives on a separate "data" branch that is
@@ -14,11 +19,16 @@ name: Update skills & deploy
 
 on:
   schedule:
-    - cron: '17 */2 * * *'   # every 2 hours, at :17 past
+    - cron: '7,37 * * * *'   # try every 30 minutes; most attempts skip (see above)
   push:
     branches: [main]
     paths-ignore: ['**.md']
   workflow_dispatch:
+    inputs:
+      skip_if_fresh:
+        description: 'Skip when the data is under 100 minutes old (what scheduled runs do)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # push the "data" branch
@@ -34,6 +44,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      skip: ${{ steps.fresh.outputs.skip }}
     steps:
       - uses: actions/checkout@v7
 
@@ -50,13 +62,28 @@ jobs:
             echo "No data branch yet — first run will do a full scan."
           fi
 
+      - name: Skip if the data is still fresh
+        id: fresh
+        env:
+          GUARD: ${{ github.event_name == 'schedule' || inputs.skip_if_fresh == true }}
+        run: |
+          skip=false
+          if [ "$GUARD" = "true" ] && [ -f site/data/skills.json ]; then
+            age=$(node -e 'const d=JSON.parse(require("fs").readFileSync("site/data/skills.json","utf8"));console.log(Math.round((Date.now()-Date.parse(d.generatedAt))/60000))')
+            echo "Data is $age minutes old."
+            if [ "$age" -lt 100 ]; then skip=true; echo "Fresh enough, skipping this run."; fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
       - name: Collect skills from GitHub
+        if: steps.fresh.outputs.skip != 'true'
         env:
           # Optional: save a personal access token as the SKILLS_GH_TOKEN secret for a higher API limit.
           GITHUB_TOKEN: ${{ secrets.SKILLS_GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: node scripts/collect.mjs
 
       - name: Save data to the "data" branch (single commit, no history growth)
+        if: steps.fresh.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -81,13 +108,16 @@ jobs:
         run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/update.yml/enable"
 
       - uses: actions/configure-pages@v6
+        if: steps.fresh.outputs.skip != 'true'
 
       - uses: actions/upload-pages-artifact@v5
+        if: steps.fresh.outputs.skip != 'true'
         with:
           path: site
 
   deploy:
     needs: update
+    if: needs.update.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

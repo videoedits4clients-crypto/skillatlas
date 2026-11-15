@@ -20,7 +20,7 @@ A self-updating directory of Claude & AI-agent skills (`SKILL.md`). It scans Git
 4. **Allow the bot to commit:** go to **Settings → Actions → General → Workflow permissions** and choose **Read and write permissions**.
 5. **Run it once:** open the **Actions** tab, select **Update skills & deploy**, and click **Run workflow**. When it finishes, your site is at `https://<you>.github.io/skillatlas/`.
 
-After that it updates itself **every 2 hours** (at 17 minutes past the hour, UTC). Each run updates the data, saves it to the `data` branch, and redeploys.
+After that it updates itself **about every 2 hours**. GitHub's scheduler is best-effort and can start runs late or drop them, so the workflow is triggered every 30 minutes and skips itself unless the data is at least 100 minutes old. Each run updates the data, saves it to the `data` branch, and redeploys.
 
 ### Optional: a higher API limit
 The built-in `GITHUB_TOKEN` handles about 1,000 API calls an hour, which is enough for the default settings. If you raise the repo counts in `config/sources.json`, create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) with public-repo read access and save it as the repo secret **`SKILLS_GH_TOKEN`**.

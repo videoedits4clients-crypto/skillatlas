@@ -155,7 +155,7 @@
     const gemCut = gemScores[Math.floor(gemScores.length * 0.7)] ?? Infinity;
     state.skills.forEach(s => (s.gem = s.r.isGem && !s.needsKey && s.description.length > 80 && gemScore(s) >= gemCut));
 
-    $('#updatedLabel').textContent = `Updated ${ago(d.generatedAt)} · refreshes every 2 hours`;
+    $('#updatedLabel').textContent = `Updated ${ago(d.generatedAt)} · refreshes about every 2 hours`;
     $('#footUpdated').textContent = `Last updated ${new Date(d.generatedAt).toLocaleString()}`;
     const newCount = state.skills.filter(s => s.isNew).length;
     $('#stats').innerHTML = [
