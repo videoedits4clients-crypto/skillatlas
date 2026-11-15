@@ -128,6 +128,16 @@ h1 { font-size: clamp(34px, 5.5vw, 56px); line-height: 1.05; letter-spacing: -.0
 .trend-ic.big { width: 24px; height: 24px; margin-left: 8px; vertical-align: 3px; }
 .trend-ic.big svg { width: 15px; height: 15px; }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } }
+.badge.rising { background: #ffe9e0; color: #b53a12; }
+.badge.gem { background: #e3f4fb; color: #0b6a8f; }
+:root[data-theme="dark"] .badge.rising { background: #3b1d12; color: #ff9d78; }
+:root[data-theme="dark"] .badge.gem { background: #0f2c38; color: #7fd0ee; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .badge.rising { background: #3b1d12; color: #ff9d78; }
+  :root:not([data-theme="light"]) .badge.gem { background: #0f2c38; color: #7fd0ee; }
+}
+.footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.footer a:hover { text-decoration: underline; }
 .badge.hot { background: var(--accent-soft); color: var(--accent); }
 .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .cat-card { text-align: left; display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 14px; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }

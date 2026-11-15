@@ -29,7 +29,7 @@
 
   const state = {
     data: null, skills: [], repoMap: new Map(), catMap: new Map(), nicheMap: new Map(),
-    q: '', cat: '', niche: '', repo: '', source: 'all', keys: 'any', sort: 'best', shown: PAGE, view: 'browse',
+    q: '', cat: '', niche: '', lane: '', repo: '', source: 'all', keys: 'any', sort: 'best', shown: PAGE, view: 'browse',
     saved: new Set(store.get('saved', [])), openId: null, lastFocus: null,
   };
 
@@ -92,6 +92,20 @@
         r.heat = Date.parse(r.pushedAt) > weekAgo ? Math.log10(r.stars + 1) * 10 : 0;
       }
     });
+    // 🚀 Rising: young collections gaining stars fastest for their age. Works from day one,
+    // because it uses the repo's creation date instead of our own star history.
+    const DAY = 864e5;
+    d.repos.forEach(r => {
+      r.ageDays = r.createdAt ? Math.max(3, (Date.now() - Date.parse(r.createdAt)) / DAY) : 9999;
+      r.velocity = r.ageDays <= 120 ? r.stars / r.ageDays : 0;
+    });
+    const young = d.repos.filter(r => r.velocity > 0 && r.stars >= 30 && !r.archived).sort((a, b) => b.velocity - a.velocity);
+    young.slice(0, Math.max(10, Math.round(young.length * 0.4))).forEach(r => (r.isRising = true));
+    // 💎 Gem: small collections that are still looked after.
+    d.repos.forEach(r => {
+      r.isGem = !r.isRising && !r.official && !r.archived && r.stars < 1500 && Date.now() - Date.parse(r.pushedAt) < 90 * DAY;
+    });
+
     // The ↗ icon: only with real star-trend data, and only for the top ~4% of collections (max 15)
     // by heat that gained at least 10 stars, so it stays meaningful.
     if (state.trendReady) {
@@ -117,7 +131,7 @@
         hayDesc: s.description.toLowerCase(),
         hayMeta: [s.repo, s.path, cat?.name, ...(s.tags || []).map(t => state.catMap.get(t)?.name), ...(r.topics || []), ...(s.needs || []), ...(s.niches || []).map(n => state.nicheMap.get(n)?.name)].join(' ').toLowerCase(),
       };
-      sk.base = Math.log10(sk.stars + 1) * 10 + (sk.official ? 25 : 0) + (sk.isNew ? 3 : 0) + Math.min(s.description.length, 200) / 100 - (r.archived ? 10 : 0);
+      sk.base = Math.log10(sk.stars + 1) * 10 + (sk.official ? 25 : 0) + (sk.isNew ? 3 : 0) + (r.isRising ? 6 : 0) + Math.min(s.description.length, 200) / 100 - (r.archived ? 10 : 0);
       return sk;
     });
 
@@ -137,7 +151,11 @@
       r.isPack = r.n >= 2;
     });
 
-    $('#updatedLabel').textContent = `Updated ${ago(d.generatedAt)} · refreshes twice daily`;
+    const gemScores = state.skills.filter(s => s.r.isGem && !s.needsKey).map(gemScore).sort((a, b) => a - b);
+    const gemCut = gemScores[Math.floor(gemScores.length * 0.7)] ?? Infinity;
+    state.skills.forEach(s => (s.gem = s.r.isGem && !s.needsKey && s.description.length > 80 && gemScore(s) >= gemCut));
+
+    $('#updatedLabel').textContent = `Updated ${ago(d.generatedAt)} · refreshes every 2 hours`;
     $('#footUpdated').textContent = `Last updated ${new Date(d.generatedAt).toLocaleString()}`;
     const newCount = state.skills.filter(s => s.isNew).length;
     $('#stats').innerHTML = [
@@ -184,6 +202,8 @@
     if (state.source === 'official') list = list.filter(s => s.official);
     if (state.source === 'community') list = list.filter(s => !s.official);
     if (state.keys === 'none') list = list.filter(s => !s.needsKey);
+    if (state.lane === 'rising') list = list.filter(s => s.r.isRising);
+    if (state.lane === 'gems') list = list.filter(s => s.gem);
     if (toks.length) {
       list = list.map(s => ({ s, m: scoreSkill(s, toks) })).filter(x => x.m > 0)
         .map(x => (x.s._score = x.m * 4 + x.s.base, x.s));
@@ -195,9 +215,20 @@
       stars: (a, b) => b.stars - a.stars || a.name.localeCompare(b.name),
       new: (a, b) => b.firstSeen.localeCompare(a.firstSeen) || b._score - a._score,
       trending: (a, b) => (b.r.heat || 0) - (a.r.heat || 0) || b._score - a._score,
+      rising: (a, b) => (b.r.velocity || 0) - (a.r.velocity || 0) || b._score - a._score,
+      updated: (a, b) => (b.r.pushedAt || '').localeCompare(a.r.pushedAt || '') || b._score - a._score,
+      gems: (a, b) => gemScore(b) - gemScore(a),
       az: (a, b) => a.title.localeCompare(b.title),
     };
-    return [...list].sort(sorters[state.sort] || sorters.best);
+    const sorted = [...list].sort(sorters[state.sort] || sorters.best);
+    if (state.sort === 'gems' || state.sort === 'rising') {
+      // Best skill of every collection first, then everyone's second-best, and so on,
+      // so one big collection can't fill the whole page.
+      const seen = new Map();
+      sorted.forEach((s, i) => { const k = seen.get(s.repo) || 0; seen.set(s.repo, k + 1); s._turn = k; s._pos = i; });
+      sorted.sort((a, b) => a._turn - b._turn || a._pos - b._pos);
+    }
+    return sorted;
   }
 
   // ---------- Rendering ----------
@@ -235,6 +266,8 @@
     if (s.isNew && !extra.includes('🆕')) b.push('<span class="badge new">New</span>');
     if (s.needsKey) b.push(`<span class="badge key" title="Needs an account / API key: ${esc(s.needs.join(', '))}">🔑 Needs key</span>`);
     else if (s.needs.length) b.push(`<span class="badge" title="Optional key for extras: ${esc(s.needs.join(', '))}">🔑 Optional key</span>`);
+    if (s.r.isRising && !extra.includes('🚀')) b.push(`<span class="badge rising" title="${esc(risingTip(s.r))}">🚀 Rising</span>`);
+    if (s.gem && !extra.includes('💎')) b.push('<span class="badge gem" title="A well-made skill from a small collection (under 1,500 stars) that is still maintained">💎 Gem</span>');
     if (s.r.marketplace) b.push('<span class="badge plugin" title="Installable as a Claude Code plugin">Plugin</span>');
     if (s.r.archived) b.push('<span class="badge">Archived</span>');
     return b.length ? `<div class="badges">${b.join('')}</div>` : '';
@@ -280,6 +313,22 @@
         : `<span class="badge hot">🔄 updated ${ago(s.r.pushedAt)}</span>`)).join('');
       state.hasTrend = true;
     }
+    // Rising fast: one skill per collection, fastest first.
+    const rising = diverse(state.skills.filter(s => s.r.isRising && s.description.length > 40)
+      .sort((a, b) => b.r.velocity - a.r.velocity || b.base - a.base), 1, 12);
+    if (rising.length >= 4) {
+      $('#risingRail').innerHTML = rising.map(s => cardHTML(s, `<span class="badge rising" title="${esc(risingTip(s.r))}">🚀 ★ ${fmt(s.r.stars)} in ${ageText(s.r.ageDays)}</span>`)).join('');
+      state.hasRising = true;
+    }
+    // Hidden gems: best-looking skills from small collections; the selection rotates daily.
+    const gemPool = diverse(state.skills.filter(s => s.gem)
+      .sort((a, b) => gemScore(b) - gemScore(a)), 1, 72);
+    const dayN = Math.floor(Date.now() / 864e5);
+    const gems = gemPool.map((s, i) => [s, (Math.imul(i + 1, 2654435761) ^ Math.imul(dayN, 40503)) >>> 0]).sort((a, b) => a[1] - b[1]).slice(0, 12).map(x => x[0]);
+    if (gems.length >= 4) {
+      $('#gemRail').innerHTML = gems.map(s => cardHTML(s, '<span class="badge gem">💎 Hidden gem</span>')).join('');
+      state.hasGems = true;
+    }
     // Just added: newest first.
     const fresh = diverse(state.skills.filter(s => s.isNew).sort((a, b) => b.firstSeen.localeCompare(a.firstSeen) || b.base - a.base));
     if (fresh.length >= 4) {
@@ -298,6 +347,8 @@
     b.push(r.keyFree ? '<span class="badge free" title="No skill in this pack needs an outside account or API key">🔓 No API keys</span>'
       : `<span class="badge key" title="${r.keyCount} of ${r.n} skills need an outside account or API key">🔑 ${r.keyCount} of ${r.n} need a key</span>`);
     if (r.theme) b.push(`<span class="badge">${catIcon(r.theme)} ${esc(catName(r.theme))}</span>`);
+    if (r.isRising) b.push(`<span class="badge rising" title="${esc(risingTip(r))}">🚀 Rising</span>`);
+    if (r.isGem) b.push('<span class="badge gem" title="A small collection (under 1,500 stars) that is still maintained">💎 Gem</span>');
     if (r.marketplace) b.push('<span class="badge plugin" title="Installable as a Claude Code plugin">Plugin</span>');
     if (r.archived) b.push('<span class="badge">Archived</span>');
     return `<div class="badges">${b.join('')}</div>`;
@@ -328,6 +379,18 @@
         <p class="hint">The zip is the author's whole repository from GitHub, so it may include extra files. To get just one skill, open it below.</p>
       </div></div>`;
   }
+  function ageText(days) {
+    const d = Math.round(days);
+    return d < 14 ? `${d} days` : d < 60 ? `${Math.round(d / 7)} weeks` : `${Math.round(d / 30)} months`;
+  }
+  const risingTip = r => `Rising fast: ★ ${r.stars.toLocaleString()} in its first ${ageText(r.ageDays)}`;
+  // "Useful-looking" for a small skill: a clear description, more than a bare SKILL.md,
+  // recently maintained, some community interest. Stars matter only a little here.
+  function gemScore(s) {
+    const r = s.r, fresh = (Date.now() - Date.parse(r.pushedAt)) / 864e5;
+    return Math.min(s.description.length, 300) / 60 + (s.fileCount > 1 ? 3 : 0) + (s.fileCount > 4 ? 1.5 : 0)
+      + (fresh < 14 ? 3 : fresh < 45 ? 1.5 : 0) + Math.log10(r.stars + 1) * 2 + (r.license ? 1 : 0);
+  }
   function diverse(list, perRepo = 2, n = 12) {
     const per = new Map(); const out = [];
     for (const s of list) {
@@ -345,7 +408,7 @@
 
   function renderBrowse() {
     const list = filtered();
-    const filtersOn = state.q || state.cat || state.niche || state.repo || state.source !== 'all' || state.keys !== 'any';
+    const filtersOn = state.q || state.cat || state.niche || state.lane || state.repo || state.source !== 'all' || state.keys !== 'any';
     $('#nicheBlock').hidden = !!filtersOn || !!$('#nicheBlock').dataset.empty;
     $('#packBlock').hidden = !!filtersOn || !state.hasPacks;
 
@@ -366,6 +429,8 @@
     $('#startBlock').hidden = !!filtersOn;
     $('#trendBlock').hidden = !!filtersOn || !state.hasTrend;
     $('#newBlock').hidden = !!filtersOn || !state.hasNew;
+    $('#risingBlock').hidden = !!filtersOn || !state.hasRising;
+    $('#gemBlock').hidden = !!filtersOn || !state.hasGems;
 
     // Sidebar counts reflect everything except the category filter.
     const saveCat = state.cat; state.cat = '';
@@ -374,7 +439,7 @@
     $('#catList').innerHTML = `<li><button data-cat="" class="${!state.cat ? 'on' : ''}">🗂️ All skills <span class="n">${pre.length.toLocaleString()}</span></button></li>` +
       state.data.categories.filter(c => c.count).map(c => `<li><button data-cat="${c.id}" class="${state.cat === c.id ? 'on' : ''}">${c.icon} ${esc(c.name)} <span class="n">${(counts[c.id] || 0).toLocaleString()}</span></button></li>`).join('');
 
-    const title = state.niche ? nicheIcon(state.niche) + ' ' + nicheName(state.niche) + (state.cat ? ' · ' + catName(state.cat) : '') : state.cat ? catName(state.cat) : state.repo ? state.repo : state.q ? 'Results' : 'All skills';
+    const title = state.lane && !state.niche && !state.cat ? (state.lane === 'rising' ? '🚀 Rising fast' : '💎 Hidden gems') : state.niche ? nicheIcon(state.niche) + ' ' + nicheName(state.niche) + (state.cat ? ' · ' + catName(state.cat) : '') : state.cat ? catName(state.cat) : state.repo ? state.repo : state.q ? 'Results' : 'All skills';
     $('#resultsTitle').textContent = title;
     $('#resultsCount').textContent = `${list.length.toLocaleString()} skill${list.length === 1 ? '' : 's'}`;
 
@@ -385,6 +450,7 @@
     if (state.repo) af.push(`<button class="af" data-clear="repo">📦 ${esc(state.repo)}</button>`);
     if (state.source !== 'all') af.push(`<button class="af" data-clear="source">${state.source === 'official' ? 'Official only' : 'Community only'}</button>`);
     if (state.keys === 'none') af.push('<button class="af" data-clear="keys">🔓 No API key needed</button>');
+    if (state.lane) af.push(`<button class="af" data-clear="lane">${state.lane === 'rising' ? '🚀 Rising fast' : '💎 Hidden gems'}</button>`);
     $('#activeFilters').innerHTML = af.join('');
     $('#noKeyBtn').setAttribute('aria-pressed', String(state.keys === 'none'));
 
@@ -404,6 +470,8 @@
       stars: (a, b) => b.stars - a.stars,
       trending: (a, b) => (b.heat || 0) - (a.heat || 0) || b.stars - a.stars,
       size: (a, b) => b.n - a.n || b.stars - a.stars,
+      rising: (a, b) => (b.velocity || 0) - (a.velocity || 0) || b.stars - a.stars,
+      updated: (a, b) => (b.pushedAt || '').localeCompare(a.pushedAt || ''),
     };
     const repos = state.data.repos
       .filter(r => r.n >= 1)
@@ -449,6 +517,7 @@
     state.repo = p.get('repo') || '';
     state.source = p.get('source') || 'all';
     state.keys = p.get('keys') === 'none' ? 'none' : 'any';
+    state.lane = ['rising', 'gems'].includes(p.get('lane')) ? p.get('lane') : '';
     state.sort = p.get('sort') || 'best';
     state.openId = p.get('skill');
     $('#q').value = state.q;
@@ -462,6 +531,7 @@
     if (state.repo) p.set('repo', state.repo);
     if (state.source !== 'all') p.set('source', state.source);
     if (state.keys !== 'any') p.set('keys', state.keys);
+    if (state.lane) p.set('lane', state.lane);
     if (state.sort !== 'best') p.set('sort', state.sort);
     if (state.openId) p.set('skill', state.openId);
     const url = location.pathname + (p.toString() ? '?' + p : '');
@@ -503,22 +573,24 @@
   ['#packTheme', '#packNiche', '#packSort'].forEach(sel => $(sel).addEventListener('change', renderCollections));
   $('#packNoKey').addEventListener('click', e => { const b = e.currentTarget; b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); renderCollections(); });
   $('#moreBtn').addEventListener('click', () => { state.shown += PAGE; renderBrowse(); });
-  $('#clearAll').addEventListener('click', () => { $('#q').value = ''; update({ q: '', cat: '', niche: '', repo: '', source: 'all', keys: 'any' }); });
+  $('#clearAll').addEventListener('click', () => { $('#q').value = ''; update({ q: '', cat: '', niche: '', lane: '', repo: '', source: 'all', keys: 'any', sort: 'best' }); });
 
   document.addEventListener('click', e => {
     const t = e.target;
     const nav = t.closest('[data-nav]');
-    if (nav) { e.preventDefault(); const v = nav.dataset.nav; if (v === 'browse') { $('#q').value = ''; go('browse', { q: '', cat: '', niche: '', repo: '', source: 'all', keys: 'any' }); } else go(v); return; }
+    if (nav) { e.preventDefault(); const v = nav.dataset.nav; if (v === 'browse') { $('#q').value = ''; go('browse', { q: '', cat: '', niche: '', lane: '', repo: '', source: 'all', keys: 'any', sort: 'best' }); } else go(v); return; }
     const save = t.closest('[data-save]');
     if (save) { e.stopPropagation(); toggleSave(save.dataset.save); return; }
     const sug = t.closest('[data-suggest]');
     if (sug) { $('#q').value = sug.dataset.suggest; update({ q: sug.dataset.suggest }, true); return; }
     const nic = t.closest('[data-niche]');
-    if (nic) { closeDrawer(false); state.openId = null; $('#q').value = ''; go('browse', { niche: nic.dataset.niche, q: '', cat: '', repo: '' }); setTimeout(() => $('#results').scrollIntoView({ block: 'start' }), 0); return; }
+    if (nic) { closeDrawer(false); state.openId = null; $('#q').value = ''; go('browse', { niche: nic.dataset.niche, q: '', cat: '', repo: '', lane: '' }); setTimeout(() => $('#results').scrollIntoView({ block: 'start' }), 0); return; }
     const cc = t.closest('[data-copycmd]');
     if (cc) { copy(cc.dataset.copycmd, 'Command copied'); return; }
     const cat = t.closest('[data-cat]');
     if (cat) { update({ cat: cat.dataset.cat }, !!cat.closest('#catGrid')); return; }
+    const lane = t.closest('[data-lane]');
+    if (lane) { const l = lane.dataset.lane; update({ lane: l, sort: l === 'rising' ? 'rising' : 'gems' }, true); return; }
     const see = t.closest('[data-see]');
     if (see) { update({ sort: see.dataset.see }, true); return; }
     const src = t.closest('[data-source]');
@@ -526,7 +598,7 @@
     const clr = t.closest('[data-clear]');
     if (clr) { const k = clr.dataset.clear; if (k === 'q') $('#q').value = ''; update({ [k]: k === 'source' ? 'all' : k === 'keys' ? 'any' : '' }); return; }
     const repo = t.closest('[data-repo]');
-    if (repo) { closeDrawer(false); state.openId = null; go('browse', { repo: repo.dataset.repo, q: '', cat: '', niche: '' }); $('#q').value = ''; setTimeout(() => $('#results').scrollIntoView({ block: 'start' }), 0); return; }
+    if (repo) { closeDrawer(false); state.openId = null; go('browse', { repo: repo.dataset.repo, q: '', cat: '', niche: '', lane: '', sort: 'best' }); $('#q').value = ''; setTimeout(() => $('#results').scrollIntoView({ block: 'start' }), 0); return; }
     const card = t.closest('[data-id]');
     if (card && !t.closest('a')) { state.lastFocus = card; openSkill(card.dataset.id, true); }
   });

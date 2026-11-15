@@ -1,8 +1,8 @@
 {
   "$comment": "Where the collector looks for skills. Edit freely — the next scheduled run picks up changes.",
-
-  "officialOwners": ["anthropics"],
-
+  "officialOwners": [
+    "anthropics"
+  ],
   "seedRepos": [
     "anthropics/skills",
     "anthropics/claude-cookbooks",
@@ -16,7 +16,6 @@
     "vercel-labs/agent-skills",
     "openai/skills"
   ],
-
   "awesomeLists": [
     "travisvn/awesome-claude-skills",
     "ComposioHQ/awesome-claude-skills",
@@ -25,25 +24,134 @@
     "BehiSecc/awesome-claude-skills",
     "karanb192/awesome-claude-skills"
   ],
-
   "searchQueries": [
-    { "q": "topic:claude-skills", "pages": 3 },
-    { "q": "topic:agent-skills", "pages": 3 },
-    { "q": "topic:claude-code-skills", "pages": 2 },
-    { "q": "topic:anthropic-skills", "pages": 1 },
-    { "q": "topic:claude-skill", "pages": 1 },
-    { "q": "topic:claude-code-plugin", "pages": 1 },
-    { "q": "topic:claude-code-plugins", "pages": 1 },
-    { "q": "\"SKILL.md\" in:readme claude", "pages": 2 }
+    {
+      "q": "topic:claude-skills",
+      "pages": 3
+    },
+    {
+      "q": "topic:agent-skills",
+      "pages": 3
+    },
+    {
+      "q": "topic:claude-code-skills",
+      "pages": 2
+    },
+    {
+      "q": "topic:anthropic-skills",
+      "pages": 1
+    },
+    {
+      "q": "topic:claude-skill",
+      "pages": 1
+    },
+    {
+      "q": "topic:claude-code-plugin",
+      "pages": 1
+    },
+    {
+      "q": "topic:claude-code-plugins",
+      "pages": 1
+    },
+    {
+      "q": "\"SKILL.md\" in:readme claude",
+      "pages": 2
+    },
+    {
+      "q": "topic:claude-skills created:>{d120} stars:>=10",
+      "pages": 2
+    },
+    {
+      "q": "topic:agent-skills created:>{d120} stars:>=10",
+      "pages": 2
+    },
+    {
+      "q": "topic:claude-code-skills created:>{d120} stars:>=10",
+      "pages": 1
+    },
+    {
+      "q": "\"SKILL.md\" in:readme created:>{d120} stars:>=10",
+      "pages": 2
+    },
+    {
+      "q": "claude skills in:name,description created:>{d120} stars:>=10",
+      "pages": 2
+    },
+    {
+      "q": "agent skills in:name,description created:>{d60} stars:>=10",
+      "pages": 1
+    },
+    {
+      "q": "claude skill in:name,description created:>{d30} stars:>=10",
+      "pages": 1
+    },
+    {
+      "q": "topic:claude-skills stars:500..3000 pushed:>{d90}",
+      "pages": 2
+    },
+    {
+      "q": "topic:claude-skills stars:100..500 pushed:>{d90}",
+      "pages": 2
+    },
+    {
+      "q": "topic:claude-skills stars:25..100 pushed:>{d90}",
+      "pages": 1
+    },
+    {
+      "q": "topic:agent-skills stars:500..3000 pushed:>{d90}",
+      "pages": 2
+    },
+    {
+      "q": "topic:agent-skills stars:100..500 pushed:>{d90}",
+      "pages": 2
+    },
+    {
+      "q": "topic:agent-skills stars:25..100 pushed:>{d90}",
+      "pages": 1
+    },
+    {
+      "q": "topic:claude-code-skills stars:25..3000 pushed:>{d90}",
+      "pages": 2
+    }
   ],
-
   "blockedRepos": [],
-
   "limits": {
+    "$comment": "popularRepos = most-starred. risingRepos = young repos by stars per day. gemBands = [minStars, maxStars, howMany] for small maintained repos.",
     "minStars": 15,
-    "maxRepos": 450,
+    "popularRepos": 400,
+    "risingRepos": 200,
+    "risingMinStars": 10,
+    "risingMaxAgeDays": 120,
+    "gemBands": [
+      [
+        1000,
+        100000,
+        80
+      ],
+      [
+        400,
+        1000,
+        70
+      ],
+      [
+        150,
+        400,
+        60
+      ],
+      [
+        50,
+        150,
+        50
+      ],
+      [
+        25,
+        50,
+        20
+      ]
+    ],
+    "gemPushedWithinDays": 90,
     "maxSkillsPerRepo": 250,
     "maxFilesPerSkill": 80,
-    "maxDescriptionChars": 420
+    "maxDescriptionChars": 300
   }
 }

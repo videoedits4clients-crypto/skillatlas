@@ -77,12 +77,28 @@
           <div class="rail" id="trendRail"></div>
         </section>
 
+        <section class="block" id="risingBlock" hidden>
+          <div class="block-head row">
+            <div><h2>🚀 Rising fast</h2><p class="muted">Brand-new skills picking up GitHub stars quickly. The ones people are starting to talk about.</p></div>
+            <button class="link" data-lane="rising">See all →</button>
+          </div>
+          <div class="rail" id="risingRail"></div>
+        </section>
+
         <section class="block" id="newBlock" hidden>
           <div class="block-head row">
             <div><h2>🆕 Just added</h2><p class="muted">Fresh skills that showed up in the last 7 days.</p></div>
             <button class="link" data-see="new">See all →</button>
           </div>
           <div class="rail" id="newRail"></div>
+        </section>
+
+        <section class="block" id="gemBlock" hidden>
+          <div class="block-head row">
+            <div><h2>💎 Hidden gems</h2><p class="muted">Small, well-made skills that haven't been discovered by the crowd yet. A fresh selection every day.</p></div>
+            <button class="link" data-lane="gems">See all →</button>
+          </div>
+          <div class="rail" id="gemRail"></div>
         </section>
 
         <section class="block" id="packBlock" hidden>
@@ -121,6 +137,9 @@
                   <option value="stars">Most stars</option>
                   <option value="new">Newly added</option>
                   <option value="trending">Trending this week</option>
+                  <option value="rising">Rising fast</option>
+                  <option value="updated">Recently updated</option>
+                  <option value="gems">Best hidden gems</option>
                   <option value="az">A → Z</option>
                 </select>
               </label>
@@ -164,6 +183,8 @@
           <label class="select"><span class="sr">Sort</span><select id="packSort">
             <option value="stars">Most popular</option>
             <option value="trending">Trending</option>
+            <option value="rising">Rising fast</option>
+            <option value="updated">Recently updated</option>
             <option value="size">Most skills</option>
           </select></label>
         </div>
@@ -227,9 +248,10 @@
         </div>
 
         <h2 class="faq-title">Questions people ask</h2>
-        <details class="faq"><summary>How often is this updated?</summary><p>Twice a day. A scheduled job scans GitHub for repositories that contain <code>SKILL.md</code> files, reads each skill's name and description, sorts it into a category, and republishes the site.</p></details>
+        <details class="faq"><summary>How often is this updated?</summary><p>Every 2 hours. A scheduled job scans GitHub for repositories that contain <code>SKILL.md</code> files, reads each skill's name and description, sorts it into a category, and republishes the site.</p></details>
         <details class="faq"><summary>Do skills cost money? What does “Needs key” mean?</summary><p>Skills themselves are free to download. Most only need your AI assistant (Claude or another agent). Some connect to an outside service such as OpenAI, ElevenLabs or Composio, and you'd need your own account or API key there. Those services may charge. Skills like this show a 🔑 <b>Needs key</b> badge naming the service, and <b>Optional key</b> means it works without one. Turn on <b>🔓 No API key needed</b> above the results to hide them. This is detected automatically from each skill's instructions, so treat it as a strong hint, not a guarantee.</p></details>
         <details class="faq"><summary>What does the <span class="trend-ic" style="animation:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg></span> icon next to a name mean?</summary><p>It means the skill is <b>trending</b>: its collection is one of the fastest-growing on GitHub this week, counting both new stars and how fast it's growing for its size. Hover over the icon to see how many stars it gained. The list is recalculated with every update.</p></details>
+        <details class="faq"><summary>What do 🚀 Rising and 💎 Gem mean?</summary><p><b>🚀 Rising</b> marks skills from a collection that is less than four months old and gaining GitHub stars unusually fast for its age. These are often the ones people have just started sharing. <b>💎 Gem</b> marks skills from small collections (under 1,500 stars) that are still being maintained. The site scans the most popular collections, the fastest-growing new ones, and a spread of small ones, so a skill doesn't need to be famous to be listed.</p></details>
         <details class="faq"><summary>What is a skill pack? What is a niche?</summary><p>A <b>pack</b> is a set of skills one author publishes together in a single GitHub repository, for example a marketing kit or a set of research tools. You can install one skill from it or download the whole pack. A pack marked <b>🔓 No API keys</b> has no skills that need an outside account. A <b>niche</b> is a specific job, like video editing, SEO or resume writing. Niches are narrower than categories, and one skill can appear in several. Both are assigned automatically from each skill's name and description.</p></details>
         <details class="faq"><summary>Where do the skills come from?</summary><p>Anthropic's official repositories, well-known curated “awesome” lists, and public GitHub repositories tagged with topics like <code>claude-skills</code> or <code>agent-skills</code>. Repos need a minimum number of stars to be listed, which filters out most spam and experiments.</p></details>
         <details class="faq"><summary>Why do I see the same skill name twice?</summary><p>Different authors sometimes publish skills with the same name. Exact copies are merged into the most-starred source; genuinely different versions are kept so you can compare.</p></details>
@@ -241,6 +263,7 @@
 
   <footer class="footer">
     <div class="wrap footer-inner">
+      <a href="https://github.com/videoedits4clients-crypto/skillatlas/issues/new?title=Suggest%20a%20skill&body=Link%20to%20the%20skill%20or%20GitHub%20repo%3A%0A%0AWhy%20it%27s%20useful%3A" target="_blank" rel="noopener">➕ Suggest a skill we're missing</a>
       <span>🧭 SkillAtlas · <span id="footUpdated"></span></span>
       <span class="muted">Skills belong to their authors. Always review code before installing.</span>
     </div>

@@ -138,6 +138,8 @@ const humanize = s => s.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCa
 const REPO_RE = /github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})/g;
 const NOT_REPOS = new Set(['topics', 'orgs', 'apps', 'features', 'marketplace', 'sponsors', 'settings', 'login', 'about', 'collections', 'trending', 'search', 'site', 'pricing', 'enterprise', 'readme']);
 
+const fillDates = q => q.replace(/\{d(\d+)\}/g, (_, n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10));
+
 async function discoverCandidates() {
   const candidates = new Map(); // "owner/repo" lower -> { full, sources:Set }
   const add = (full, source) => {
@@ -153,7 +155,7 @@ async function discoverCandidates() {
 
   for (const { q, pages } of CONFIG.searchQueries) {
     for (let page = 1; page <= pages; page++) {
-      const query = `${q} stars:>=${L.minStars} fork:false`;
+      const query = fillDates(q) + (/\bstars:/.test(q) ? '' : ` stars:>=${L.minStars}`) + ' fork:false';
       const data = await gh(`/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=100&page=${page}`);
       if (!data?.items?.length) break;
       data.items.forEach(it => add(it.full_name, 'search'));
@@ -178,7 +180,7 @@ async function discoverCandidates() {
 
 // ---------- 2. Repo metadata (GraphQL, batched) ----------
 
-const REPO_FIELDS = `nameWithOwner url description stargazerCount forkCount isFork isArchived isPrivate pushedAt
+const REPO_FIELDS = `nameWithOwner url description stargazerCount forkCount isFork isArchived isPrivate pushedAt createdAt
   homepageUrl licenseInfo { spdxId } defaultBranchRef { name } owner { login avatarUrl }
   repositoryTopics(first: 8) { nodes { topic { name } } }`;
 
@@ -210,26 +212,48 @@ async function fetchRepoMeta(candidates) {
 
 const SKIP_PATH = /(^|\/)(node_modules|\.git|vendor|dist|build|__pycache__|\.venv|site-packages)\//i;
 
-async function scanRepo(repo, shaCache) {
+let treeCalls = 0;
+
+// Returns { marketplace, skills } for a repo, or null if it can't be read.
+// The repo's file listing is cached by its last-push time, so a repo that hasn't changed
+// costs zero API calls on later runs. That is what makes frequent runs affordable.
+async function scanRepo(repo, shaCache, scanCache) {
+  const id = repo.nameWithOwner;
   const branch = repo.defaultBranchRef?.name;
   if (!branch) return null;
-  const tree = await gh(`/repos/${repo.nameWithOwner}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
-  if (!tree?.tree) return null;
 
-  const blobs = tree.tree.filter(t => t.type === 'blob');
-  const skillFiles = blobs
-    .filter(t => /(^|\/)skill\.md$/i.test(t.path) && !SKIP_PATH.test(t.path))
-    .sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path))
-    .slice(0, L.maxSkillsPerRepo);
+  let listing = scanCache[id];
+  const fresh = listing && listing.pushedAt === repo.pushedAt && listing.branch === branch && !process.env.FULL;
+  if (!fresh) {
+    treeCalls++;
+    const tree = await gh(`/repos/${id}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+    if (tree?.tree) {
+      const blobs = tree.tree.filter(t => t.type === 'blob');
+      const skillFiles = blobs
+        .filter(t => /(^|\/)skill\.md$/i.test(t.path) && !SKIP_PATH.test(t.path))
+        .sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path))
+        .slice(0, L.maxSkillsPerRepo);
+      listing = {
+        pushedAt: repo.pushedAt,
+        branch,
+        marketplace: blobs.some(t => t.path === '.claude-plugin/marketplace.json'),
+        skills: skillFiles.map(file => {
+          const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
+          const prefix = dir ? dir + '/' : '';
+          const all = dir ? blobs.filter(b => b.path.startsWith(prefix)) : [file];
+          return { dir, file: file.path, sha: file.sha, fileCount: all.length, files: all.length <= L.maxFilesPerSkill ? all.map(b => b.path.slice(prefix.length)) : null };
+        }),
+      };
+      scanCache[id] = listing;
+    } else if (!listing) {
+      return null; // unreadable and nothing cached
+    } // else: unreadable right now, fall back to the older cached listing
+  }
 
-  const marketplace = blobs.some(t => t.path === '.claude-plugin/marketplace.json');
-  if (!skillFiles.length) return { marketplace, skills: [], truncated: tree.truncated };
-
-  const skills = await pool(skillFiles, 12, async file => {
-    const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
-    let fm = shaCache[file.sha];
+  const skills = await pool(listing.skills, 12, async sk => {
+    let fm = shaCache[sk.sha];
     if (!fm || fm.v !== CACHE_VERSION) {
-      const url = `https://raw.githubusercontent.com/${repo.nameWithOwner}/${encodeURIComponent(branch)}/${file.path.split('/').map(encodeURIComponent).join('/')}`;
+      const url = `https://raw.githubusercontent.com/${id}/${encodeURIComponent(listing.branch)}/${sk.file.split('/').map(encodeURIComponent).join('/')}`;
       const text = await gh(url, { raw: true });
       if (text == null) return null;
       const parsed = parseFrontmatter(text);
@@ -241,20 +265,11 @@ async function scanRepo(repo, shaCache) {
         req: detectRequirements(text),
         v: CACHE_VERSION,
       };
-      shaCache[file.sha] = fm;
+      shaCache[sk.sha] = fm;
     }
-    const prefix = dir ? dir + '/' : '';
-    const allFiles = dir ? blobs.filter(b => b.path.startsWith(prefix)) : [file];
-    return {
-      dir,
-      file: file.path,
-      sha: file.sha,
-      fm,
-      fileCount: allFiles.length,
-      files: allFiles.length <= L.maxFilesPerSkill ? allFiles.map(b => b.path.slice(prefix.length)) : null,
-    };
+    return { ...sk, fm };
   });
-  return { marketplace, skills: skills.filter(Boolean), truncated: tree.truncated };
+  return { marketplace: listing.marketplace, skills: skills.filter(Boolean) };
 }
 
 // ---------- main ----------
@@ -292,14 +307,42 @@ async function main() {
   const meta = await fetchRepoMeta(candidates);
   const official = new Set(CONFIG.officialOwners.map(o => o.toLowerCase()));
   const seeds = new Set(CONFIG.seedRepos.map(r => r.toLowerCase()));
-  const repos = [...meta.values()]
-    .filter(r => !r.isFork && (seeds.has(r.nameWithOwner.toLowerCase()) || r.stargazerCount >= L.minStars))
-    .sort((a, b) => b.stargazerCount - a.stargazerCount)
-    .slice(0, L.maxRepos);
-  log(`scanning ${repos.length} repos (of ${meta.size} with metadata)`);
+  // Which repos get scanned. Three lanes, so the site isn't only "whoever has the most stars":
+  //   popular: the most-starred repos
+  //   rising:  young repos gaining stars fastest (stars per day since creation)
+  //   gem:     small, still-maintained repos, picked across star bands so tiny ones get in too
+  const DAY = 864e5;
+  const eligible = [...meta.values()].filter(r => !r.isFork && r.defaultBranchRef);
+  const byStars = (a, b) => b.stargazerCount - a.stargazerCount;
+  const ageDays = r => Math.max(3, (Date.now() - Date.parse(r.createdAt)) / DAY);
+  const velocity = r => r.stargazerCount / ageDays(r);
+  const active = (r, days) => !r.isArchived && Date.now() - Date.parse(r.pushedAt) < days * DAY;
+  const picked = new Map();
+  const pick = (list, n, lane) => {
+    let c = 0;
+    for (const r of list) {
+      if (c >= n) break;
+      if (picked.has(r.nameWithOwner)) continue;
+      picked.set(r.nameWithOwner, Object.assign(r, { lane }));
+      c++;
+    }
+    return c;
+  };
+  pick(eligible.filter(r => seeds.has(r.nameWithOwner.toLowerCase())), Infinity, 'popular');
+  pick(eligible.filter(r => r.stargazerCount >= L.minStars).sort(byStars), L.popularRepos, 'popular');
+  const popularCutoff = Math.min(...[...picked.values()].filter(r => !seeds.has(r.nameWithOwner.toLowerCase())).map(r => r.stargazerCount));
+  const nRising = pick(eligible.filter(r => r.stargazerCount >= L.risingMinStars && ageDays(r) <= L.risingMaxAgeDays && active(r, 30))
+    .sort((a, b) => velocity(b) - velocity(a)), L.risingRepos, 'rising');
+  let nGems = 0;
+  for (const [lo, hi, n] of L.gemBands) {
+    nGems += pick(eligible.filter(r => r.stargazerCount >= lo && r.stargazerCount < hi && active(r, L.gemPushedWithinDays)).sort(byStars), n, 'gem');
+  }
+  const repos = [...picked.values()];
+  state.scanCache ||= {};
+  log(`scanning ${repos.length} repos (of ${meta.size} with metadata): ${repos.length - nRising - nGems} popular (cutoff ★${popularCutoff}), ${nRising} rising, ${nGems} gems`);
 
   const scans = await pool(repos, 6, async (r, i) => {
-    const res = await scanRepo(r, state.shaCache);
+    const res = await scanRepo(r, state.shaCache, state.scanCache);
     if ((i + 1) % 50 === 0) log(`  scanned ${i + 1}/${repos.length}`);
     return res;
   });
@@ -308,6 +351,9 @@ async function main() {
   const today = now.slice(0, 10);
   const outRepos = [];
   let skills = [];
+  // Repos already in the catalogue before this run (first run: whatever the last output had).
+  state.knownRepos ||= Object.fromEntries((prevOut?.repos || []).map(r => [r.id, today]));
+  const knownBefore = new Set(Object.keys(state.knownRepos));
 
   repos.forEach((r, i) => {
     const id = r.nameWithOwner;
@@ -320,6 +366,9 @@ async function main() {
       scan = { marketplace: prevRepoMap.get(id)?.marketplace || false, skills: null };
     } else if (!scan.skills.length) return;
     const ownerOfficial = official.has(r.owner.login.toLowerCase());
+    const wasKnown = knownBefore.has(id);
+    const freshRepo = Date.now() - Date.parse(r.createdAt) < 14 * 864e5;
+    state.knownRepos[id] = today;
 
     // star history (one point per day) → 7-day trend
     const hist = (state.starHistory[id] ||= []);
@@ -341,6 +390,8 @@ async function main() {
       trendDays,
       branch: r.defaultBranchRef.name,
       pushedAt: r.pushedAt,
+      createdAt: r.createdAt,
+      lane: r.lane,
       license: r.licenseInfo?.spdxId && r.licenseInfo.spdxId !== 'NOASSERTION' ? r.licenseInfo.spdxId : null,
       avatar: r.owner.avatarUrl,
       official: ownerOfficial,
@@ -371,7 +422,9 @@ async function main() {
       const folder = s.dir.split('/').pop() || r.nameWithOwner.split('/')[1];
       const name = s.fm.name || folder;
       const skillId = `${id}/${s.dir}`.replace(/\/$/, '');
-      state.firstSeen[skillId] ||= now;
+      // "New" means new to the world, not new to us: when a repo enters the catalogue for the
+      // first time, its existing skills get the baseline date unless the repo itself is fresh.
+      state.firstSeen[skillId] ||= (!wasKnown && !freshRepo) ? state.since : now;
       state.lastSeen[skillId] = today;
       const { category, tags } = classify({ name, description: s.fm.description, path: s.dir, repo: id });
       const { needs, optional } = needsFor(s.fm.req, category, s.files);
@@ -441,7 +494,7 @@ async function main() {
 
   const out = {
     generatedAt: now,
-    stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, trendDays: maxTrendDays, trackingSince: state.since, scannedRepos: repos.length, durationSec: Math.round((Date.now() - started) / 1000) },
+    stats: { skills: skills.length, repos: finalRepos.length, needsKey: slim.filter(s => s.needs && !s.needsOptional).length, trendDays: maxTrendDays, trackingSince: state.since, popularCutoff, scannedRepos: repos.length, treeCalls, durationSec: Math.round((Date.now() - started) / 1000) },
     categories: CATEGORIES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: counts[id] || 0 })),
     niches: NICHES.map(({ id, name, icon, desc }) => ({ id, name, icon, desc, count: nicheCounts[id] || 0 })),
     repos: finalRepos,
@@ -471,12 +524,14 @@ async function main() {
     if (!usedRepos.has(id) && last < cutoff) delete state.starHistory[id];
   }
 
+  for (const id of Object.keys(state.scanCache)) if (!meta.has(id.toLowerCase())) delete state.scanCache[id];
+
   // Write atomically so a crash mid-write never leaves a half-written file behind.
   const writeAtomic = async (file, data) => { await writeFile(file + '.tmp', data); await rename(file + '.tmp', file); };
   await writeAtomic(OUT_FILE, JSON.stringify(out));
   await writeAtomic(FILES_FILE, JSON.stringify(files));
   await writeAtomic(STATE_FILE, JSON.stringify(state));
-  log(`done: ${skills.length} skills from ${finalRepos.length} repos · ${failedScans} repos failed (kept previous data) · ${apiCalls} API calls · ${out.stats.durationSec}s`);
+  log(`done: ${skills.length} skills from ${finalRepos.length} repos · ${failedScans} repos failed (kept previous data) · ${treeCalls} repos re-read, ${repos.length - treeCalls} unchanged · ${apiCalls} API calls · ${out.stats.durationSec}s`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
