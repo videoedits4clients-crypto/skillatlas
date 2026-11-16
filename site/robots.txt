@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://videoedits4clients-crypto.github.io/skillatlas/sitemap.xml
