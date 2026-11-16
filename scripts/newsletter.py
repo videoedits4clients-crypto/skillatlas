@@ -104,9 +104,10 @@ def build_html(fresh, top_picks, cat_counts, total_skills, cold=False):
                       f'font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">'
                       f'{total_skills:,} in the atlas</span>')
 
+    prefix = "" if cold else "+"
     cat_rows = "".join(
         f'<tr><td style="padding:7px 0;border-bottom:1px solid #e9e6de;font-size:14px;color:#3c3a36;">{esc(c.title())}</td>'
-        f'<td style="padding:7px 0;border-bottom:1px solid #e9e6de;text-align:right;font-weight:800;color:#4f46e5;font-size:14px;">+{n}</td></tr>'
+        f'<td style="padding:7px 0;border-bottom:1px solid #e9e6de;text-align:right;font-weight:800;color:#4f46e5;font-size:14px;">{prefix}{n}</td></tr>'
         for c, n in cat_counts)
 
     pick_cards = ""
