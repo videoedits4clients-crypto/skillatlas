@@ -74,8 +74,35 @@ def esc(s):
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_html(fresh, top_picks, cat_counts, total_skills):
+def is_cold_start(n_fresh, total):
+    """The atlas is brand new, so every skill looks 'new'. Detect that
+    instead of shouting '+16,492 new skills' in the first edition."""
+    return n_fresh > max(500, int(total * 0.25))
+
+
+def build_html(fresh, top_picks, cat_counts, total_skills, cold=False):
     updated = datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+    if cold:
+        head_pill = (f'<span style="display:inline-block;background:#eef0ff;color:#4f46e5;font-size:11.5px;'
+                     f'font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">'
+                     f'{total_skills:,} skills catalogued</span>')
+        intro = (f'SkillAtlas just finished its first full sweep of GitHub &#8212; '
+                 f'<b style="color:#1c1b18;">{total_skills:,} AI-agent skills catalogued</b>, '
+                 f'sorted by category and job. From next week this email reports only what is '
+                 f'genuinely new. Here is the shape of the atlas as it stands.')
+        grew_label = "&#128202; &nbsp;WHERE THE ATLAS IS DEEPEST"
+        total_pill = ""
+    else:
+        head_pill = (f'<span style="display:inline-block;background:#eef0ff;color:#4f46e5;font-size:11.5px;'
+                     f'font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">'
+                     f'+{len(fresh)} new skills</span>')
+        intro = (f'GitHub published <b style="color:#1c1b18;">{len(fresh)} new AI-agent skills '
+                 f'this week</b>. Here is where the ecosystem is growing, and the ones worth your time.')
+        grew_label = "&#128202; &nbsp;WHERE THE ECOSYSTEM GREW"
+        total_pill = (f'<span style="display:inline-block;background:#f3f1ec;color:#6d6a61;font-size:11.5px;'
+                      f'font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">'
+                      f'{total_skills:,} in the atlas</span>')
 
     cat_rows = "".join(
         f'<tr><td style="padding:7px 0;border-bottom:1px solid #e9e6de;font-size:14px;color:#3c3a36;">{esc(c.title())}</td>'
@@ -101,18 +128,17 @@ def build_html(fresh, top_picks, cat_counts, total_skills):
     <div style="font-size:32px;font-weight:800;color:#4f46e5;margin-top:10px;">Skill<b style="color:#1c1b18;">Atlas</b></div>
     <div style="color:#a29f96;font-size:12.5px;margin-top:7px;letter-spacing:2.5px;text-transform:uppercase;">Weekly skills report &#183; {updated}</div>
     <div style="margin-top:16px;">
-      <span style="display:inline-block;background:#eef0ff;color:#4f46e5;font-size:11.5px;font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">+{len(fresh)} new skills</span>
-      <span style="display:inline-block;background:#f3f1ec;color:#6d6a61;font-size:11.5px;font-weight:700;padding:6px 13px;border-radius:20px;margin:2px 3px;">{total_skills:,} in the atlas</span>
+      {head_pill}
+      {total_pill}
     </div>
   </div>
 
   <div style="padding:0 18px;">
     <p style="font-size:14.5px;line-height:1.65;color:#3c3a36;margin:20px 2px 0;">
-      GitHub published <b style="color:#1c1b18;">{len(fresh)} new AI-agent skills this week</b>.
-      Here's where the ecosystem is growing, and the ones worth your time.</p>
+      {intro}</p>
 
     <div style="margin:26px 0 10px;">
-      <div style="font-weight:800;font-size:14px;letter-spacing:1.5px;color:#4f46e5;">&#128202; &nbsp;WHERE THE ECOSYSTEM GREW</div>
+      <div style="font-weight:800;font-size:14px;letter-spacing:1.5px;color:#4f46e5;">{grew_label}</div>
       <div style="margin-top:8px;border-top:1px solid #e5e2da;"></div>
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;">{cat_rows}</table>
     </div>
@@ -178,7 +204,8 @@ def main():
         return
     top = picks(fresh)
     cat_counts = Counter(s["category"] for s in fresh).most_common(6)
-    html = build_html(fresh, top, cat_counts, total)
+    cold = is_cold_start(len(fresh), total)
+    html = build_html(fresh, top, cat_counts, total, cold=cold)
 
     if dry:
         (ROOT / "preview.html").write_text(html, encoding="utf-8")
@@ -196,8 +223,11 @@ def main():
         print("No subscribers yet — nothing to send.")
         return
 
-    subject = (f"🧭 SkillAtlas weekly: {len(fresh)} new AI skills "
-               f"({datetime.now(timezone.utc).strftime('%b %d')})")
+    if cold:
+        subject = f"SkillAtlas is live: {total:,} AI skills catalogued"
+    else:
+        subject = (f"SkillAtlas weekly: {len(fresh)} new AI skills "
+                   f"({datetime.now(timezone.utc).strftime('%b %d')})")
     send(sender, app_password, subject, html, subscribers)
     print(f"✅ Sent weekly digest to {len(subscribers)} subscribers")
 
